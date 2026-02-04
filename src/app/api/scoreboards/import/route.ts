@@ -38,14 +38,14 @@ export async function POST(request: NextRequest) {
 
     // Prepare records for insertion
     const records = uniqueColors.map((entry) => {
-      // Extract model name (remove .png extension)
+      // Extract model name (remove .png extension), keep original filename for S3
       const filename = entry.name;
       const modelName = filename.replace(/\.png$/i, "").toLowerCase();
 
       return {
         model_name: modelName,
-        image_filename: filename.toLowerCase(),
-        image_url: `${S3_BUCKET_URL}/${filename.toLowerCase()}`,
+        image_filename: filename, // preserve original case for S3
+        image_url: `${S3_BUCKET_URL}/${filename}`, // preserve original case for S3
         color_config: {
           "scoreboard-face": entry["scoreboard-face"],
           "accent-striping": entry["accent-striping"],
