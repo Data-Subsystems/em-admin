@@ -124,22 +124,37 @@ Real-time canvas-based color replacement for scoreboard previews:
 
 ```typescript
 <ColorizedScoreboard
-  imageUrl={string}      // S3 image URL
-  faceColor={string}     // Hex color for main face
-  accentColor={string}   // Hex color for accent stripes (or null)
-  ledColor={string}      // Hex color for LED displays
+  imageUrl={string}      // S3 image URL (via /api/images proxy)
+  faceColor={string}     // Hex color for main face background
+  accentColor={string}   // Hex color for frame lines (or null for no change)
+  ledColor={string}      // Hex color for LED digit displays
 />
 ```
 
-**How it works:**
-1. Loads original image into HTML5 Canvas
-2. Stores original pixel data for reference
-3. Detects pixel types using HSL color analysis:
-   - **Face colors**: Dark/medium pixels (lightness 0.05-0.6)
-   - **LED pixels**: Bright red/amber hue with high saturation
-   - **Accent areas**: Gray/silver with low saturation
-4. Applies target colors while preserving relative lightness
-5. Re-renders on any color prop change
+**Layer-based color replacement algorithm:**
+
+The component splits the image into 5 logical layers, then renders each with the appropriate color:
+
+| Layer | Detection Criteria | Color Applied |
+|-------|-------------------|---------------|
+| **Black** | L < 12% | Keep original (LED backgrounds) |
+| **Face** | Matches dominant saturated color | User's face color |
+| **Striping** | Pure white (R,G,B ≥ 250) | User's accent color |
+| **Label** | Gray/desaturated (S < 15%, L > 50%) | Keep original (text) |
+| **Digit** | Warm hue, red-dominant, NOT face color | User's LED color (hue-shifted) |
+
+**Processing steps:**
+1. Load original image into HTML5 Canvas
+2. **Find dominant face color**: Count saturated pixels, find most common (quantized to 20-unit buckets)
+3. **Classify pixels**: Assign each pixel to a layer based on HSL values
+4. **Render layers**: Apply target colors based on layer type
+5. **Re-render**: Automatically updates when any color prop changes
+
+**Key design decisions:**
+- Face detection happens FIRST to prevent red/orange faces from being misclassified as LEDs
+- Pure white (≥250) = frame lines; gray (<250) = text labels (universal across all scoreboards)
+- LED pixels are hue-shifted (not replaced) to preserve glow/antialiasing effects
+- Outer 6px perimeter of face layer also receives accent color (colored border)
 
 ## UI Tabs
 
