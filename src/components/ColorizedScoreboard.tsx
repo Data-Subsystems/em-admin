@@ -127,7 +127,7 @@ export default function ColorizedScoreboard({
     img.src = imageUrl;
   }, [imageUrl]);
 
-  // Apply color replacement
+  // Apply color replacement using layer-based approach
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !originalData) return;
@@ -135,12 +135,9 @@ export default function ColorizedScoreboard({
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return;
 
-    const imageData = new ImageData(
-      new Uint8ClampedArray(originalData.data),
-      originalData.width,
-      originalData.height
-    );
-    const data = imageData.data;
+    const width = originalData.width;
+    const height = originalData.height;
+    const srcData = originalData.data;
 
     // Parse target colors
     const targetFace = parseColor(faceColor);
@@ -148,107 +145,140 @@ export default function ColorizedScoreboard({
     const targetLed = parseColor(ledColor);
     const targetLedHsl = rgbToHsl(targetLed.r, targetLed.g, targetLed.b);
 
-    const width = originalData.width;
-    const height = originalData.height;
+    // Step 1: Classify each pixel into layers
+    const layers = new Uint8Array(width * height); // 0=transparent, 1=black, 2=face, 3=striping, 4=label, 5=digit
 
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-      const a = data[i + 3];
+    for (let i = 0; i < srcData.length; i += 4) {
+      const r = srcData[i];
+      const g = srcData[i + 1];
+      const b = srcData[i + 2];
+      const a = srcData[i + 3];
+      const pixelIndex = i / 4;
 
-      if (a < 10) continue;
+      if (a < 10) {
+        layers[pixelIndex] = 0; // Transparent
+        continue;
+      }
 
       const { h, s, l } = rgbToHsl(r, g, b);
 
-      // Calculate pixel position
+      // Classification priority (order matters):
+
+      // 1. BLACK - LED backgrounds (very dark)
+      if (l < 0.12) {
+        layers[pixelIndex] = 1;
+        continue;
+      }
+
+      // 2. DIGIT - LED pixels (warm red/amber hue, red-dominant)
+      const isWarmHue = h < 0.15 || h > 0.85;
+      if (isWarmHue && r > g && r > b && r > 80 && (r - b > 20) && l < 0.90) {
+        layers[pixelIndex] = 5;
+        continue;
+      }
+
+      // 3. STRIPING - Pure white pixels (frame lines)
+      if (r >= 250 && g >= 250 && b >= 250) {
+        layers[pixelIndex] = 3;
+        continue;
+      }
+
+      // 4. LABEL - Gray/light desaturated pixels (text)
+      if (s < 0.15 && l > 0.50) {
+        layers[pixelIndex] = 4;
+        continue;
+      }
+
+      // 5. FACE - Saturated colored pixels (background)
+      if (s > 0.10) {
+        layers[pixelIndex] = 2;
+        continue;
+      }
+
+      // Default: treat as face
+      layers[pixelIndex] = 2;
+    }
+
+    // Step 2: Render layers to output
+    const imageData = new ImageData(width, height);
+    const outData = imageData.data;
+
+    for (let i = 0; i < srcData.length; i += 4) {
       const pixelIndex = i / 4;
+      const layer = layers[pixelIndex];
       const x = pixelIndex % width;
       const y = Math.floor(pixelIndex / width);
 
-      // 1. BLACK pixels (LED display backgrounds) - L < 12%
-      if (l < 0.12) {
-        continue; // Keep black
-      }
+      // Get original pixel values for reference
+      const origR = srcData[i];
+      const origG = srcData[i + 1];
+      const origB = srcData[i + 2];
+      const origA = srcData[i + 3];
 
-      // 2. LED pixels (warm red/amber colors) - include antialiasing pixels
-      const isWarmHue = h < 0.15 || h > 0.85;
-      const isLedPixel = isWarmHue && r > g && r > b && r > 80 && (r - b > 20);
+      switch (layer) {
+        case 0: // Transparent
+          outData[i] = 0;
+          outData[i + 1] = 0;
+          outData[i + 2] = 0;
+          outData[i + 3] = 0;
+          break;
 
-      if (isLedPixel && l > 0.12 && l < 0.90) {
-        const newRgb = hslToRgb(targetLedHsl.h, Math.max(s, targetLedHsl.s * 0.5), l);
-        data[i] = newRgb.r;
-        data[i + 1] = newRgb.g;
-        data[i + 2] = newRgb.b;
-        continue;
-      }
+        case 1: // Black (LED background)
+          outData[i] = origR;
+          outData[i + 1] = origG;
+          outData[i + 2] = origB;
+          outData[i + 3] = origA;
+          break;
 
-      // 3. LIGHT pixels (L > 50%, S < 25%) - could be FRAME or TEXT
-      // Check frame position FIRST before assuming it's text
-      if (s < 0.25 && l > 0.50) {
-        // Frame positions (relative to image dimensions for flexibility)
-        const outerFrameThickness = Math.max(6, Math.round(width * 0.01));
+        case 2: // Face (background)
+          // Outer perimeter gets accent color if set
+          const outerFrameThickness = 6;
+          const isOuterPerimeter =
+            x < outerFrameThickness ||
+            x >= width - outerFrameThickness ||
+            y < outerFrameThickness ||
+            y >= height - outerFrameThickness;
 
-        // Outer perimeter (very edge of scoreboard)
-        const isOuterPerimeter =
-          x < outerFrameThickness ||
-          x >= width - outerFrameThickness ||
-          y < outerFrameThickness ||
-          y >= height - outerFrameThickness;
+          if (isOuterPerimeter && targetAccent) {
+            outData[i] = targetAccent.r;
+            outData[i + 1] = targetAccent.g;
+            outData[i + 2] = targetAccent.b;
+          } else {
+            outData[i] = targetFace.r;
+            outData[i + 1] = targetFace.g;
+            outData[i + 2] = targetFace.b;
+          }
+          outData[i + 3] = origA;
+          break;
 
-        // Inner horizontal frame lines (BALL/STRIKE/OUT section borders)
-        // These run across the full width
-        const innerFrameTop1 = Math.round(height * 0.04);    // ~22 for 550px
-        const innerFrameTop2 = Math.round(height * 0.05);    // ~28 for 550px
-        const innerFrameBot1 = Math.round(height * 0.36);    // ~198 for 550px
-        const innerFrameBot2 = Math.round(height * 0.37);    // ~204 for 550px
+        case 3: // Striping (frame lines)
+          if (targetAccent) {
+            outData[i] = targetAccent.r;
+            outData[i + 1] = targetAccent.g;
+            outData[i + 2] = targetAccent.b;
+          } else {
+            outData[i] = origR;
+            outData[i + 1] = origG;
+            outData[i + 2] = origB;
+          }
+          outData[i + 3] = origA;
+          break;
 
-        const isInnerHorizontalFrame =
-          ((y >= innerFrameTop1 && y <= innerFrameTop2) ||
-           (y >= innerFrameBot1 && y <= innerFrameBot2));
+        case 4: // Label (text) - keep original
+          outData[i] = origR;
+          outData[i + 1] = origG;
+          outData[i + 2] = origB;
+          outData[i + 3] = origA;
+          break;
 
-        // Vertical frame lines at left and right edges (inside outer perimeter)
-        const vertFrameLeft1 = Math.round(width * 0.11);     // ~64 for 579px
-        const vertFrameLeft2 = Math.round(width * 0.12);     // ~70 for 579px
-        const vertFrameRight1 = Math.round(width * 0.94);    // ~544 for 579px
-        const vertFrameRight2 = Math.round(width * 0.96);    // ~556 for 579px
-
-        const isVerticalFrame =
-          ((x >= vertFrameLeft1 && x <= vertFrameLeft2) ||
-           (x >= vertFrameRight1 && x <= vertFrameRight2)) &&
-          y > outerFrameThickness && y < height - outerFrameThickness;
-
-        const isFrameLine = isOuterPerimeter || isInnerHorizontalFrame || isVerticalFrame;
-
-        if (isFrameLine && targetAccent) {
-          data[i] = targetAccent.r;
-          data[i + 1] = targetAccent.g;
-          data[i + 2] = targetAccent.b;
-        }
-        // else: it's text - keep unchanged
-        continue;
-      }
-
-      // 4. COLORED/SATURATED pixels - this is the FACE background
-      if (s > 0.15) {
-        // Check outer perimeter for accent color
-        const outerFrameThickness = Math.max(6, Math.round(width * 0.01));
-        const isOuterPerimeter =
-          x < outerFrameThickness ||
-          x >= width - outerFrameThickness ||
-          y < outerFrameThickness ||
-          y >= height - outerFrameThickness;
-
-        if (isOuterPerimeter && targetAccent) {
-          data[i] = targetAccent.r;
-          data[i + 1] = targetAccent.g;
-          data[i + 2] = targetAccent.b;
-        } else {
-          data[i] = targetFace.r;
-          data[i + 1] = targetFace.g;
-          data[i + 2] = targetFace.b;
-        }
-        continue;
+        case 5: // Digit (LED)
+          const { s, l } = rgbToHsl(origR, origG, origB);
+          const newRgb = hslToRgb(targetLedHsl.h, Math.max(s, targetLedHsl.s * 0.5), l);
+          outData[i] = newRgb.r;
+          outData[i + 1] = newRgb.g;
+          outData[i + 2] = newRgb.b;
+          outData[i + 3] = origA;
+          break;
       }
     }
 
