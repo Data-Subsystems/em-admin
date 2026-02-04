@@ -95,6 +95,16 @@ function HomeContent() {
   const [progressStep, setProgressStep] = useState<string>("");
   const [progressPercent, setProgressPercent] = useState<number>(0);
 
+  // Generate all variations state
+  const [generatingAll, setGeneratingAll] = useState(false);
+  const [modelProgress, setModelProgress] = useState<{
+    totalTasks: number;
+    completed: number;
+    pending: number;
+    processing: number;
+    percentComplete: number;
+  } | null>(null);
+
   // Update URL when state changes
   const updateUrl = useCallback((tab: Tab, model?: string | null, colors?: { face?: string; accent?: string; led?: string }) => {
     const params = new URLSearchParams();
@@ -373,6 +383,53 @@ function HomeContent() {
     }
   }, [selectedScoreboard, faceColor, accentColor, ledColor, useGeneratedMode]);
 
+  // Fetch model progress (for generate all)
+  const fetchModelProgress = useCallback(async () => {
+    if (!selectedScoreboard) return;
+    try {
+      const response = await fetch(`/api/colorpicker/generate-all?model=${encodeURIComponent(selectedScoreboard.model_name)}`);
+      const data = await response.json();
+      setModelProgress(data);
+    } catch (error) {
+      console.error("Error fetching model progress:", error);
+    }
+  }, [selectedScoreboard]);
+
+  // Generate all variations for the model
+  const handleGenerateAll = async () => {
+    if (!selectedScoreboard) return;
+
+    setGeneratingAll(true);
+    setMessage(null);
+
+    try {
+      const response = await fetch("/api/colorpicker/generate-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: selectedScoreboard.model_name }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setMessage({
+          type: "success",
+          text: data.message,
+        });
+        fetchModelProgress();
+      } else {
+        setMessage({ type: "error", text: data.error || "Failed to queue tasks" });
+      }
+    } catch (error) {
+      setMessage({
+        type: "error",
+        text: error instanceof Error ? error.message : "Failed to queue tasks",
+      });
+    }
+
+    setGeneratingAll(false);
+  };
+
   // Poll for generation progress
   const pollProgress = useCallback(async (sid: string) => {
     try {
@@ -477,6 +534,13 @@ function HomeContent() {
       checkGeneratedImage();
     }
   }, [useGeneratedMode, selectedScoreboard, faceColor, accentColor, ledColor, checkGeneratedImage]);
+
+  // Fetch model progress when scoreboard changes
+  useEffect(() => {
+    if (selectedScoreboard && useGeneratedMode) {
+      fetchModelProgress();
+    }
+  }, [selectedScoreboard, useGeneratedMode, fetchModelProgress]);
 
   useEffect(() => {
     fetchScoreboards();
@@ -695,54 +759,96 @@ function HomeContent() {
             {selectedScoreboard ? (
               <>
                 {/* Mode Toggle */}
-                <div className="bg-white rounded-lg shadow-sm p-4 flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <span className="text-sm font-medium text-gray-700">Preview Mode:</span>
-                    <div className="flex rounded-lg overflow-hidden border border-gray-300">
-                      <button
-                        onClick={() => setUseGeneratedMode(false)}
-                        className={`px-4 py-2 text-sm font-medium transition ${
-                          !useGeneratedMode
-                            ? "bg-[#8B3A3A] text-white"
-                            : "bg-white text-gray-700 hover:bg-gray-50"
-                        }`}
-                      >
-                        Live Preview
-                      </button>
-                      <button
-                        onClick={() => setUseGeneratedMode(true)}
-                        className={`px-4 py-2 text-sm font-medium transition ${
-                          useGeneratedMode
-                            ? "bg-[#8B3A3A] text-white"
-                            : "bg-white text-gray-700 hover:bg-gray-50"
-                        }`}
-                      >
-                        Generated Images
-                      </button>
+                <div className="bg-white rounded-lg shadow-sm p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <span className="text-sm font-medium text-gray-700">Preview Mode:</span>
+                      <div className="flex rounded-lg overflow-hidden border border-gray-300">
+                        <button
+                          onClick={() => setUseGeneratedMode(false)}
+                          className={`px-4 py-2 text-sm font-medium transition ${
+                            !useGeneratedMode
+                              ? "bg-[#8B3A3A] text-white"
+                              : "bg-white text-gray-700 hover:bg-gray-50"
+                          }`}
+                        >
+                          Live Preview
+                        </button>
+                        <button
+                          onClick={() => setUseGeneratedMode(true)}
+                          className={`px-4 py-2 text-sm font-medium transition ${
+                            useGeneratedMode
+                              ? "bg-[#8B3A3A] text-white"
+                              : "bg-white text-gray-700 hover:bg-gray-50"
+                          }`}
+                        >
+                          Generated Images
+                        </button>
+                      </div>
                     </div>
+                    {useGeneratedMode && (
+                      <div className="flex items-center gap-3">
+                        {generationStatus && (
+                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                            generationStatus === "ready" || generationStatus === "completed"
+                              ? "bg-green-100 text-green-800"
+                              : generationStatus === "generating"
+                              ? "bg-blue-100 text-blue-800 animate-pulse"
+                              : generationStatus === "error"
+                              ? "bg-red-100 text-red-800"
+                              : "bg-gray-100 text-gray-800"
+                          }`}>
+                            {generationStatus === "ready" ? "Ready" : generationStatus === "generating" ? "Generating..." : generationStatus}
+                          </span>
+                        )}
+                        <button
+                          onClick={handleGenerate}
+                          disabled={generating}
+                          className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition font-medium text-sm"
+                        >
+                          {generating ? "Creating..." : "Generate This"}
+                        </button>
+                        <button
+                          onClick={handleGenerateAll}
+                          disabled={generatingAll}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition font-medium text-sm"
+                        >
+                          {generatingAll ? "Queuing..." : "Generate All (684)"}
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  {useGeneratedMode && (
-                    <div className="flex items-center gap-3">
-                      {generationStatus && (
-                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                          generationStatus === "ready" || generationStatus === "completed"
-                            ? "bg-green-100 text-green-800"
-                            : generationStatus === "generating"
-                            ? "bg-blue-100 text-blue-800 animate-pulse"
-                            : generationStatus === "error"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-gray-100 text-gray-800"
-                        }`}>
-                          {generationStatus === "ready" ? "Ready" : generationStatus === "generating" ? "Generating..." : generationStatus}
+
+                  {/* Model Progress */}
+                  {useGeneratedMode && modelProgress && modelProgress.totalTasks > 0 && (
+                    <div className="mt-4 pt-4 border-t">
+                      <div className="flex justify-between text-sm mb-2">
+                        <span className="font-medium">Model Progress: {selectedScoreboard?.model_name}</span>
+                        <span className="text-gray-500">
+                          {modelProgress.completed} / {modelProgress.totalTasks} ({modelProgress.percentComplete}%)
                         </span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
+                        <div
+                          className="bg-blue-500 h-2 rounded-full transition-all"
+                          style={{ width: `${modelProgress.percentComplete}%` }}
+                        />
+                      </div>
+                      <div className="flex gap-4 text-xs text-gray-500">
+                        <span className="text-green-600">Completed: {modelProgress.completed}</span>
+                        <span className="text-yellow-600">Pending: {modelProgress.pending}</span>
+                        {modelProgress.processing > 0 && (
+                          <span className="text-blue-600">Processing: {modelProgress.processing}</span>
+                        )}
+                      </div>
+                      {modelProgress.pending > 0 && (
+                        <a
+                          href="/batch"
+                          className="mt-2 inline-block text-sm text-blue-600 hover:underline"
+                        >
+                          Go to Batch Processing to start generation →
+                        </a>
                       )}
-                      <button
-                        onClick={handleGenerate}
-                        disabled={generating}
-                        className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition font-medium text-sm"
-                      >
-                        {generating ? "Creating..." : "Generate Image"}
-                      </button>
                     </div>
                   )}
                 </div>
