@@ -32,6 +32,14 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# large data files
+scoreboard-images.zip
+scoreboard-images/
+
+# public scoreboards (generated)
+public/scoreboards/
 
 # vercel
 .vercel
