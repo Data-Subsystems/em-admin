@@ -1,10 +1,25 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-// Server-side client with service role key
-export const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+// Lazy-loaded server-side client (only initialized when actually used)
+let _supabaseAdmin: SupabaseClient | null = null;
+
+export const getSupabaseAdmin = () => {
+  if (!_supabaseAdmin) {
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      throw new Error("Supabase server credentials not configured");
+    }
+    _supabaseAdmin = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+  }
+  return _supabaseAdmin;
+};
+
+// For backward compatibility - will be lazy loaded
+export const supabaseAdmin = {
+  from: (table: string) => getSupabaseAdmin().from(table),
+};
 
 // Client-side client with anon key
 export const createBrowserClient = () =>
