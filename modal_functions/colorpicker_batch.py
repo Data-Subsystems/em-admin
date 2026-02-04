@@ -19,6 +19,7 @@ image = modal.Image.debian_slim(python_version="3.11").pip_install(
     "numpy",
     "supabase",
     "fastapi",
+    "requests",
 )
 
 # Volume for caching masks between containers
@@ -237,6 +238,23 @@ class ImageGenerator:
 
         return result
 
+    def get_original_dimensions(self, model: str) -> tuple[int, int]:
+        """Fetch original image dimensions from electro-mech.com"""
+        import requests
+        from io import BytesIO
+
+        url = f"https://www.electro-mech.com/scoreboard-images/{model}.png"
+        try:
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                img = Image.open(BytesIO(response.content))
+                return img.size
+        except Exception as e:
+            print(f"Could not fetch original dimensions for {model}: {e}")
+
+        # Default fallback
+        return (720, 260)
+
     def generate_image(
         self,
         model: str,
@@ -299,11 +317,10 @@ class ImageGenerator:
                 layer = layer.resize(result.size, Image.LANCZOS)
             result = Image.alpha_composite(result, layer)
 
-        # Resize if needed
-        if width and width != result.width:
-            ratio = width / result.width
-            new_height = int(result.height * ratio)
-            result = result.resize((width, new_height), Image.LANCZOS)
+        # Resize to match original image dimensions exactly
+        original_width, original_height = self.get_original_dimensions(model)
+        if result.size != (original_width, original_height):
+            result = result.resize((original_width, original_height), Image.LANCZOS)
 
         # Convert to PNG bytes
         buffer = io.BytesIO()
@@ -646,11 +663,20 @@ def generate_single_image(item: dict) -> dict:
             layer = layer.resize(result.size, Image.LANCZOS)
         result = Image.alpha_composite(result, layer)
 
-    # Resize if needed
-    if width and width != result.width:
-        ratio = width / result.width
-        new_height = int(result.height * ratio)
-        result = result.resize((width, new_height), Image.LANCZOS)
+    # Fetch original dimensions and resize to match exactly
+    import requests
+    original_width, original_height = 720, 260  # Default
+    try:
+        orig_url = f"https://www.electro-mech.com/scoreboard-images/{model}.png"
+        resp = requests.get(orig_url, timeout=10)
+        if resp.status_code == 200:
+            orig_img = Image.open(io.BytesIO(resp.content))
+            original_width, original_height = orig_img.size
+    except Exception as e:
+        print(f"Could not fetch original dimensions: {e}")
+
+    if result.size != (original_width, original_height):
+        result = result.resize((original_width, original_height), Image.LANCZOS)
 
     # Save to bytes
     buffer = io.BytesIO()
