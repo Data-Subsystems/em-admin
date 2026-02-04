@@ -182,18 +182,6 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-[#8B3A3A] text-white shadow">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <h1 className="text-2xl font-bold">
-            Electro-Mech Scoreboard Image Tool
-          </h1>
-          <p className="text-white/80 text-sm mt-1">
-            Analyze scoreboard images and create customization configurations
-          </p>
-        </div>
-      </header>
-
       {/* Tabs */}
       <div className="max-w-7xl mx-auto px-4 mt-4">
         <div className="border-b border-gray-200 bg-white rounded-t-lg">
