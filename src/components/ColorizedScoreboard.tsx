@@ -10,16 +10,29 @@ interface ColorizedScoreboardProps {
   className?: string;
 }
 
-// Convert hex to RGB
-function hexToRgb(hex: string): { r: number; g: number; b: number } {
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  return result
-    ? {
-        r: parseInt(result[1], 16),
-        g: parseInt(result[2], 16),
-        b: parseInt(result[3], 16),
-      }
-    : { r: 0, g: 0, b: 0 };
+// Parse color string (supports hex #rrggbb or rgb(r,g,b))
+function parseColor(color: string): { r: number; g: number; b: number } {
+  // Try rgb() format first
+  const rgbMatch = /rgb\((\d+),\s*(\d+),\s*(\d+)\)/i.exec(color);
+  if (rgbMatch) {
+    return {
+      r: parseInt(rgbMatch[1], 10),
+      g: parseInt(rgbMatch[2], 10),
+      b: parseInt(rgbMatch[3], 10),
+    };
+  }
+
+  // Try hex format
+  const hexMatch = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(color);
+  if (hexMatch) {
+    return {
+      r: parseInt(hexMatch[1], 16),
+      g: parseInt(hexMatch[2], 16),
+      b: parseInt(hexMatch[3], 16),
+    };
+  }
+
+  return { r: 0, g: 0, b: 0 };
 }
 
 // Convert RGB to HSL
@@ -92,28 +105,68 @@ function isColorClose(
   return Math.sqrt(dr * dr + dg * dg + db * db) < threshold;
 }
 
-// Check if pixel is a dark/face color (not LED, not white text)
+// Check if pixel is a face color (the main colored background)
 function isFaceColor(r: number, g: number, b: number): boolean {
-  const { l } = rgbToHsl(r, g, b);
-  // Face colors are typically darker (not bright LEDs or white text)
-  // and not pure black (borders/outlines)
-  return l > 0.05 && l < 0.6;
-}
+  // Skip if it's an LED color
+  if (isLedColor(r, g, b)) return false;
 
-// Check if pixel is an LED color (bright red/amber/orange)
-function isLedColor(r: number, g: number, b: number): boolean {
-  const { h, s, l } = rgbToHsl(r, g, b);
-  // LEDs are bright (high lightness) and saturated
-  // Red hue is around 0 or 1, orange/amber is around 0.05-0.1
-  const isRedOrangeHue = h < 0.12 || h > 0.95;
-  return isRedOrangeHue && s > 0.5 && l > 0.4;
-}
+  // Skip if it's an accent/border color
+  if (isAccentColor(r, g, b)) return false;
 
-// Check if pixel is a gray/silver color (potential accent)
-function isAccentGray(r: number, g: number, b: number): boolean {
   const { s, l } = rgbToHsl(r, g, b);
-  // Gray/silver has low saturation and medium lightness
-  return s < 0.2 && l > 0.3 && l < 0.8;
+
+  // Skip black areas (LED display backgrounds) - they should stay black
+  if (l < 0.15) return false;
+
+  // Skip white/very light areas (text) - they should stay white
+  if (l > 0.85) return false;
+
+  // Skip very unsaturated areas (might be neutral elements)
+  if (s < 0.1) return false;
+
+  // This is a colored pixel that's part of the face
+  return true;
+}
+
+// Check if pixel is an LED color (red/amber/orange/yellow)
+function isLedColor(r: number, g: number, b: number): boolean {
+  // Simple approach: LEDs are warm-colored pixels where red dominates
+  // Red must be significantly higher than blue
+  // Green can be high (for amber/yellow) or low (for red)
+
+  // Red channel must be strong
+  if (r < 150) return false;
+
+  // Red must dominate over blue significantly
+  if (r - b < 50) return false;
+
+  // For red LEDs: r > g > b
+  // For amber LEDs: r > g, g > b, and g is fairly high
+  // For both: red is the highest channel
+
+  const { s, l } = rgbToHsl(r, g, b);
+
+  // Must be saturated (not gray/white)
+  if (s < 0.3) return false;
+
+  // Must be bright enough but not pure white
+  if (l < 0.25 || l > 0.9) return false;
+
+  return true;
+}
+
+// Check if pixel is a border/accent color (white or very light in original)
+function isAccentColor(r: number, g: number, b: number): boolean {
+  const { s, l } = rgbToHsl(r, g, b);
+
+  // The accent/border in original images is white or very light
+  // High lightness, low saturation (white/near-white)
+  if (l > 0.85 && s < 0.3) return true;
+
+  // Also catch light gray borders
+  if (l > 0.7 && l < 0.9 && s < 0.15) return true;
+
+  return false;
 }
 
 export default function ColorizedScoreboard({
@@ -126,10 +179,9 @@ export default function ColorizedScoreboard({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const imageRef = useRef<HTMLImageElement | null>(null);
-  const originalDataRef = useRef<ImageData | null>(null);
+  const [originalData, setOriginalData] = useState<ImageData | null>(null);
 
-  // Load and process image
+  // Load image
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -137,20 +189,19 @@ export default function ColorizedScoreboard({
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return;
 
+    setLoading(true);
+    setOriginalData(null);
+
     const img = new Image();
-    img.crossOrigin = "anonymous";
 
     img.onload = () => {
-      imageRef.current = img;
       canvas.width = img.width;
       canvas.height = img.height;
-
-      // Draw original image
       ctx.drawImage(img, 0, 0);
 
-      // Store original pixel data
-      originalDataRef.current = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
+      // Store original pixel data in state to trigger re-render
+      const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      setOriginalData(data);
       setLoading(false);
       setError(null);
     };
@@ -166,29 +217,29 @@ export default function ColorizedScoreboard({
   // Apply color replacement when colors change
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !originalDataRef.current) return;
+    if (!canvas || !originalData) return;
 
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return;
 
     // Get a fresh copy of original data
     const imageData = new ImageData(
-      new Uint8ClampedArray(originalDataRef.current.data),
-      originalDataRef.current.width,
-      originalDataRef.current.height
+      new Uint8ClampedArray(originalData.data),
+      originalData.width,
+      originalData.height
     );
     const data = imageData.data;
 
     // Parse target colors
-    const targetFace = hexToRgb(faceColor);
+    const targetFace = parseColor(faceColor);
     const targetFaceHsl = rgbToHsl(targetFace.r, targetFace.g, targetFace.b);
 
-    const targetAccent = accentColor ? hexToRgb(accentColor) : null;
+    const targetAccent = accentColor ? parseColor(accentColor) : null;
     const targetAccentHsl = targetAccent
       ? rgbToHsl(targetAccent.r, targetAccent.g, targetAccent.b)
       : null;
 
-    const targetLed = hexToRgb(ledColor);
+    const targetLed = parseColor(ledColor);
     const targetLedHsl = rgbToHsl(targetLed.r, targetLed.g, targetLed.b);
 
     // Process each pixel
@@ -211,14 +262,11 @@ export default function ColorizedScoreboard({
         data[i + 1] = newRgb.g;
         data[i + 2] = newRgb.b;
       }
-      // Check if this is an accent/gray area
-      else if (targetAccentHsl && isAccentGray(r, g, b)) {
-        // Apply accent color while preserving lightness
-        const newRgb = hslToRgb(
-          targetAccentHsl.h,
-          targetAccentHsl.s * 0.7, // Reduce saturation a bit for metallic look
-          pixelHsl.l
-        );
+      // Check if this is an accent/border area (white borders in original)
+      else if (targetAccentHsl && isAccentColor(r, g, b)) {
+        // Apply accent color - use full saturation, slightly adjust lightness
+        const newL = Math.max(0.3, Math.min(0.7, targetAccentHsl.l));
+        const newRgb = hslToRgb(targetAccentHsl.h, targetAccentHsl.s, newL);
         data[i] = newRgb.r;
         data[i + 1] = newRgb.g;
         data[i + 2] = newRgb.b;
@@ -236,7 +284,7 @@ export default function ColorizedScoreboard({
     }
 
     ctx.putImageData(imageData, 0, 0);
-  }, [faceColor, accentColor, ledColor, loading]);
+  }, [faceColor, accentColor, ledColor, originalData]);
 
   if (error) {
     return (

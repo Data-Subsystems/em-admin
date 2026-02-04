@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { ScoreboardModel, COLOR_PALETTE, LED_COLORS } from "@/lib/supabase";
 import ColorizedScoreboard from "@/components/ColorizedScoreboard";
 
@@ -14,7 +15,8 @@ interface StatusCounts {
   error?: number;
 }
 
-const S3_BASE_URL = "https://em-admin-assets.s3.us-east-1.amazonaws.com/images";
+// Use local proxy to avoid CORS issues with canvas
+const IMAGE_BASE_URL = "/api/images";
 
 // Color names in display order (matching reference UI)
 const COLOR_ORDER = [
@@ -57,7 +59,10 @@ const STORAGE_KEYS = {
   upgradeETN: "em-admin-etn",
 };
 
-export default function Home() {
+function HomeContent() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
   const [activeTab, setActiveTab] = useState<Tab>("scoreboards");
   const [scoreboards, setScoreboards] = useState<ScoreboardModel[]>([]);
   const [selectedScoreboard, setSelectedScoreboard] = useState<ScoreboardModel | null>(null);
@@ -67,6 +72,7 @@ export default function Home() {
   const [statusCounts, setStatusCounts] = useState<StatusCounts>({});
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [initialized, setInitialized] = useState(false);
+  const [urlModel, setUrlModel] = useState<string | null>(null);
 
   // Customization state
   const [colorTab, setColorTab] = useState<ColorTab>("face");
@@ -75,8 +81,29 @@ export default function Home() {
   const [ledColor, setLedColor] = useState<string>("red");
   const [upgradeETN, setUpgradeETN] = useState(false);
 
-  // Restore state from localStorage on mount
+  // Update URL when state changes
+  const updateUrl = useCallback((tab: Tab, model?: string | null, colors?: { face?: string; accent?: string; led?: string }) => {
+    const params = new URLSearchParams();
+    params.set("tab", tab);
+    if (model) params.set("model", model);
+    if (colors?.face && colors.face !== "matte_black") params.set("face", colors.face);
+    if (colors?.accent && colors.accent !== "none") params.set("accent", colors.accent);
+    if (colors?.led && colors.led !== "red") params.set("led", colors.led);
+
+    const newUrl = `/?${params.toString()}`;
+    window.history.replaceState({}, "", newUrl);
+  }, []);
+
+  // Read URL params and localStorage on mount
   useEffect(() => {
+    // URL params take priority over localStorage
+    const urlTab = searchParams.get("tab") as Tab | null;
+    const urlModelParam = searchParams.get("model");
+    const urlFace = searchParams.get("face");
+    const urlAccent = searchParams.get("accent");
+    const urlLed = searchParams.get("led");
+
+    // Get localStorage values as fallback
     const savedTab = localStorage.getItem(STORAGE_KEYS.activeTab) as Tab | null;
     const savedColorTab = localStorage.getItem(STORAGE_KEYS.colorTab) as ColorTab | null;
     const savedFace = localStorage.getItem(STORAGE_KEYS.faceColor);
@@ -84,15 +111,40 @@ export default function Home() {
     const savedLed = localStorage.getItem(STORAGE_KEYS.ledColor);
     const savedETN = localStorage.getItem(STORAGE_KEYS.upgradeETN);
 
-    if (savedTab) setActiveTab(savedTab);
+    // Apply URL params first, then localStorage fallback
+    if (urlTab) {
+      setActiveTab(urlTab);
+    } else if (savedTab) {
+      setActiveTab(savedTab);
+    }
+
+    if (urlModelParam) {
+      setUrlModel(urlModelParam);
+    }
+
+    if (urlFace) {
+      setFaceColor(urlFace);
+    } else if (savedFace) {
+      setFaceColor(savedFace);
+    }
+
+    if (urlAccent) {
+      setAccentColor(urlAccent);
+    } else if (savedAccent) {
+      setAccentColor(savedAccent);
+    }
+
+    if (urlLed) {
+      setLedColor(urlLed);
+    } else if (savedLed) {
+      setLedColor(savedLed);
+    }
+
     if (savedColorTab) setColorTab(savedColorTab);
-    if (savedFace) setFaceColor(savedFace);
-    if (savedAccent) setAccentColor(savedAccent);
-    if (savedLed) setLedColor(savedLed);
     if (savedETN) setUpgradeETN(savedETN === "true");
 
     setInitialized(true);
-  }, []);
+  }, [searchParams]);
 
   // Save state to localStorage when it changes
   useEffect(() => {
@@ -134,9 +186,34 @@ export default function Home() {
     }
   }, [selectedScoreboard, initialized]);
 
-  // Get image URL
+  // Update URL when state changes
+  useEffect(() => {
+    if (!initialized) return;
+    updateUrl(
+      activeTab,
+      selectedScoreboard?.model_name,
+      { face: faceColor, accent: accentColor, led: ledColor }
+    );
+  }, [activeTab, selectedScoreboard, faceColor, accentColor, ledColor, initialized, updateUrl]);
+
+  // Find scoreboard from URL param after data loads
+  useEffect(() => {
+    if (scoreboards.length > 0 && urlModel && !selectedScoreboard) {
+      const found = scoreboards.find(
+        (s) => s.model_name.toLowerCase() === urlModel.toLowerCase()
+      );
+      if (found) {
+        setSelectedScoreboard(found);
+        if (activeTab === "scoreboards") {
+          setActiveTab("customizer");
+        }
+      }
+    }
+  }, [scoreboards, urlModel, selectedScoreboard, activeTab]);
+
+  // Get image URL (via local proxy to avoid CORS)
   const getImageUrl = (filename: string) => {
-    return `${S3_BASE_URL}/${filename}`;
+    return `${IMAGE_BASE_URL}/${filename}`;
   };
 
   // Fetch scoreboards
@@ -250,16 +327,16 @@ export default function Home() {
     fetchAnalysisStatus();
   }, [fetchScoreboards, fetchAnalysisStatus]);
 
-  // Restore selected scoreboard after data loads
+  // Restore selected scoreboard after data loads (only if no URL param)
   useEffect(() => {
-    if (scoreboards.length > 0 && !selectedScoreboard && initialized) {
+    if (scoreboards.length > 0 && !selectedScoreboard && initialized && !urlModel) {
       const savedId = localStorage.getItem(STORAGE_KEYS.selectedId);
       if (savedId) {
         const saved = scoreboards.find((s) => s.id === savedId);
         if (saved) setSelectedScoreboard(saved);
       }
     }
-  }, [scoreboards, selectedScoreboard, initialized]);
+  }, [scoreboards, selectedScoreboard, initialized, urlModel]);
 
   // Get current color for display
   const getCurrentColor = () => {
@@ -838,5 +915,17 @@ export default function Home() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <div className="text-gray-500">Loading...</div>
+      </div>
+    }>
+      <HomeContent />
+    </Suspense>
   );
 }
