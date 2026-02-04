@@ -1,12 +1,13 @@
 # EM Admin
 
-Electro-Mech Scoreboard Image Tool - Analyzes scoreboard images using Amazon Nova Lite to create universal customization configurations.
+Electro-Mech Scoreboard Customizer - Allows users to preview scoreboard models with custom color configurations using real-time canvas-based color replacement.
 
 ## Stack
 
 - **Frontend**: Next.js 14 (App Router) + Tailwind CSS
 - **Database**: Supabase (PostgreSQL)
 - **AI**: AWS Bedrock Nova Lite (vision model for image analysis)
+- **Storage**: AWS S3 (em-admin-assets bucket for 429 scoreboard images)
 - **Processing**: Modal.com (optional, for batch processing)
 - **Deployment**: Vercel
 
@@ -24,6 +25,7 @@ npm run lint         # ESLint
 src/
 ├── app/
 │   ├── api/
+│   │   ├── auth/login/           # Authentication
 │   │   ├── scoreboards/          # Scoreboard CRUD
 │   │   │   ├── route.ts          # List scoreboards
 │   │   │   ├── import/route.ts   # Import from files
@@ -32,18 +34,29 @@ src/
 │   │   │       └── analyze/route.ts  # Analyze single
 │   │   └── analyze/
 │   │       └── batch/route.ts    # Batch analysis
-│   └── page.tsx                  # Main UI
+│   ├── page.tsx                  # Main UI (tabs: Library, Customizer, Analysis)
+│   └── layout.tsx                # Root layout
+├── components/
+│   └── ColorizedScoreboard.tsx   # Canvas-based color replacement
 ├── lib/
-│   ├── supabase.ts              # DB client + types
+│   ├── supabase.ts              # DB client + types + color palette
 │   └── bedrock.ts               # AWS Bedrock client
+├── middleware.ts                # Auth middleware
 data/
 ├── scoreboard-colors.json       # Color configs from source
-scoreboard-images/               # Original images (429 PNGs)
 modal_app/
 └── main.py                      # Modal batch processing
 supabase/
 └── migrations/                  # Database schema
 ```
+
+## S3 Image Storage
+
+Images are stored in AWS S3 for reliable hosting:
+- **Bucket**: `em-admin-assets`
+- **Path**: `/images/` (429 PNG files)
+- **URL**: `https://em-admin-assets.s3.us-east-1.amazonaws.com/images/{filename}.png`
+- **Source**: Downloaded from electro-mech.com ZIP archive
 
 ## Data Sources
 
@@ -105,12 +118,51 @@ AWS_REGION=us-east-1
 | POST | /api/analyze/batch | Batch analyze pending |
 | GET | /api/analyze/batch | Get analysis status |
 
+## ColorizedScoreboard Component
+
+Real-time canvas-based color replacement for scoreboard previews:
+
+```typescript
+<ColorizedScoreboard
+  imageUrl={string}      // S3 image URL
+  faceColor={string}     // Hex color for main face
+  accentColor={string}   // Hex color for accent stripes (or null)
+  ledColor={string}      // Hex color for LED displays
+/>
+```
+
+**How it works:**
+1. Loads original image into HTML5 Canvas
+2. Stores original pixel data for reference
+3. Detects pixel types using HSL color analysis:
+   - **Face colors**: Dark/medium pixels (lightness 0.05-0.6)
+   - **LED pixels**: Bright red/amber hue with high saturation
+   - **Accent areas**: Gray/silver with low saturation
+4. Applies target colors while preserving relative lightness
+5. Re-renders on any color prop change
+
+## UI Tabs
+
+1. **Scoreboards Library**: Grid of all 429 models, click to select for customization
+2. **Customizer**: Color pickers for face/accent/LED with live canvas preview
+3. **Analysis**: Batch processing controls and status for AI analysis
+
+## State Persistence
+
+UI state is persisted to localStorage:
+- `em_selected_model`: Currently selected scoreboard model
+- `em_face_color`: Selected face color
+- `em_accent_color`: Selected accent color
+- `em_led_color`: Selected LED color
+- `em_active_tab`: Current active tab
+
 ## Workflow
 
 1. **Import**: `POST /api/scoreboards/import` loads images and color configs
-2. **Analyze**: Click "Analyze" to process images with Nova Lite
-3. **Customize**: Select colors and export JSON configuration
-4. **Export**: Copy configuration to clipboard
+2. **Browse**: Select a scoreboard from the Library tab
+3. **Customize**: Pick colors in Customizer tab with live preview
+4. **Analyze** (optional): Process images with Nova Lite for zone detection
+5. **Export**: Copy configuration to clipboard
 
 ## Working Preferences
 
