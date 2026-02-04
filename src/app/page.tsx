@@ -529,183 +529,78 @@ function HomeContent() {
 
         {/* Customizer Tab */}
         {activeTab === "customizer" && (
-          <div className="space-y-6">
+          <div className="space-y-4">
             {selectedScoreboard ? (
               <>
-                {/* Model Header */}
-                <div className="bg-white rounded-xl shadow-sm p-6">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h2 className="text-2xl font-bold text-gray-900">
-                        Model {selectedScoreboard.model_name.toUpperCase()}
-                      </h2>
-                      <p className="text-gray-500 mt-1">
-                        {selectedScoreboard.sport_type
-                          ? `${selectedScoreboard.sport_type.charAt(0).toUpperCase() + selectedScoreboard.sport_type.slice(1)} Scoreboard`
-                          : "Multi-Sport Scoreboard"}
-                      </p>
-                    </div>
+                {/* Scoreboard Preview - Full Width */}
+                <div className="bg-white rounded-lg shadow-sm p-6">
+                  <div className="flex justify-center">
+                    <ColorizedScoreboard
+                      imageUrl={getImageUrl(selectedScoreboard.image_filename)}
+                      faceColor={COLOR_PALETTE[faceColor] || "#1a1a2e"}
+                      accentColor={accentColor !== "none" ? COLOR_PALETTE[accentColor] : null}
+                      ledColor={LED_COLORS[ledColor] || "#ff0000"}
+                      className=""
+                    />
+                  </div>
+
+                  {/* ETN Upgrade Option */}
+                  <label className="flex items-center gap-2 mt-4 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={upgradeETN}
+                      onChange={(e) => setUpgradeETN(e.target.checked)}
+                      className="w-4 h-4 rounded border-gray-300 text-[#8B3A3A] focus:ring-[#8B3A3A]"
+                    />
+                    <span className="text-sm text-gray-700">Upgrade to Electronic Team Names (ETNs)</span>
+                  </label>
+                </div>
+
+                {/* Choose Colors Section */}
+                <div className="bg-[#e5e5e5] rounded-lg p-6">
+                  <h3 className="text-xl font-semibold text-gray-800 mb-4">Choose Colors:</h3>
+
+                  {/* Color Category Tabs - Styled like reference */}
+                  <div className="flex mb-6">
                     <button
-                      onClick={() => setActiveTab("scoreboards")}
-                      className="text-sm text-gray-500 hover:text-gray-700"
+                      onClick={() => setColorTab("face")}
+                      className={`px-6 py-3 font-semibold text-white transition ${
+                        colorTab === "face" ? "bg-[#8B3A3A]" : "bg-[#a85858]"
+                      }`}
                     >
-                      Change Model
+                      Scoreboard Face
+                    </button>
+                    <button
+                      onClick={() => setColorTab("accent")}
+                      className={`px-6 py-3 font-semibold text-white transition ${
+                        colorTab === "accent" ? "bg-[#8B3A3A]" : "bg-[#a85858]"
+                      }`}
+                    >
+                      Accent Striping
+                    </button>
+                    <button
+                      onClick={() => setColorTab("led")}
+                      className={`px-6 py-3 font-semibold text-white transition ${
+                        colorTab === "led" ? "bg-[#8B3A3A]" : "bg-[#a85858]"
+                      }`}
+                    >
+                      LED Color
                     </button>
                   </div>
-                </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* Scoreboard Preview */}
-                  <div className="lg:col-span-2 bg-white rounded-xl shadow-sm p-6">
-                    {/* Canvas-based colorized preview */}
-                    <div className="bg-gray-900 rounded-lg p-6 min-h-[350px] flex items-center justify-center">
-                      <ColorizedScoreboard
-                        imageUrl={getImageUrl(selectedScoreboard.image_filename)}
-                        faceColor={COLOR_PALETTE[faceColor] || "#1a1a2e"}
-                        accentColor={accentColor !== "none" ? COLOR_PALETTE[accentColor] : null}
-                        ledColor={LED_COLORS[ledColor] || "#ff0000"}
-                        className="max-h-[350px]"
-                      />
-                    </div>
-
-                    {/* Color Preview Summary */}
-                    <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                      <div className="text-xs text-gray-500 uppercase tracking-wide mb-3">Current Configuration</div>
-                      <div className="flex items-center gap-6">
-                        <div className="flex items-center gap-2">
-                          <div
-                            className="w-8 h-8 rounded-lg shadow-sm border border-gray-200"
-                            style={{ backgroundColor: COLOR_PALETTE[faceColor] }}
-                          />
-                          <div>
-                            <div className="text-xs text-gray-500">Face</div>
-                            <div className="text-sm font-medium text-gray-900">{COLOR_DISPLAY_NAMES[faceColor]}</div>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div
-                            className={`w-8 h-8 rounded-lg shadow-sm ${accentColor === "none" ? "border-2 border-dashed border-gray-300" : "border border-gray-200"}`}
-                            style={{ backgroundColor: accentColor !== "none" ? COLOR_PALETTE[accentColor] : "transparent" }}
-                          />
-                          <div>
-                            <div className="text-xs text-gray-500">Accent</div>
-                            <div className="text-sm font-medium text-gray-900">{COLOR_DISPLAY_NAMES[accentColor]}</div>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div
-                            className="w-8 h-8 rounded-lg shadow-sm border border-gray-200"
-                            style={{ backgroundColor: LED_COLORS[ledColor], boxShadow: `0 0 10px ${LED_COLORS[ledColor]}` }}
-                          />
-                          <div>
-                            <div className="text-xs text-gray-500">LED</div>
-                            <div className="text-sm font-medium text-gray-900">{COLOR_DISPLAY_NAMES[ledColor] || ledColor.charAt(0).toUpperCase() + ledColor.slice(1)}</div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* ETN Upgrade Option */}
-                    <label className="flex items-center gap-3 mt-4 p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition">
-                      <input
-                        type="checkbox"
-                        checked={upgradeETN}
-                        onChange={(e) => setUpgradeETN(e.target.checked)}
-                        className="w-5 h-5 rounded border-gray-300 text-[#8B3A3A] focus:ring-[#8B3A3A]"
-                      />
-                      <div>
-                        <span className="font-medium text-gray-900">Upgrade to Electronic Team Names (ETNs)</span>
-                        <p className="text-xs text-gray-500">Display team names digitally instead of vinyl lettering</p>
-                      </div>
-                    </label>
-                  </div>
-
-                  {/* Specs & Actions Panel */}
-                  <div className="space-y-6">
-                    {/* Specifications */}
-                    <div className="bg-white rounded-xl shadow-sm p-6">
-                      <h3 className="font-semibold text-gray-900 mb-4">Specifications</h3>
-                      <div className="space-y-3 text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-gray-500">Dimensions</span>
-                          <span className="font-medium text-gray-900">{selectedScoreboard.dimensions || "Contact for specs"}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-500">Sport Type</span>
-                          <span className="font-medium text-gray-900 capitalize">{selectedScoreboard.sport_type || "Multi-sport"}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-500">Layout</span>
-                          <span className="font-medium text-gray-900">{selectedScoreboard.layout_type?.replace(/_/g, " ") || "Standard"}</span>
-                        </div>
-                        {selectedScoreboard.zones && selectedScoreboard.zones.length > 0 && (
-                          <div className="flex justify-between">
-                            <span className="text-gray-500">Display Zones</span>
-                            <span className="font-medium text-gray-900">{selectedScoreboard.zones.length}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="bg-white rounded-xl shadow-sm p-6 space-y-3">
-                      {selectedScoreboard.analysis_status === "pending" && (
-                        <button
-                          onClick={() => handleAnalyzeSingle(selectedScoreboard.id)}
-                          disabled={analyzing}
-                          className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition font-medium"
-                        >
-                          {analyzing ? "Analyzing..." : "Analyze with AI"}
-                        </button>
-                      )}
-                      <button className="w-full px-4 py-3 bg-[#8B3A3A] text-white rounded-lg hover:bg-[#6B2A2A] transition font-medium">
-                        Request a Quote
-                      </button>
-                      <button className="w-full px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition font-medium">
-                        Print Specifications
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Color Selection Panel */}
-                <div className="bg-white rounded-xl shadow-sm p-6">
-                  <h3 className="font-semibold text-gray-900 mb-4">Color Configuration</h3>
-
-                  {/* Color Category Tabs */}
-                  <div className="flex gap-2 mb-6">
-                    {[
-                      { id: "face", label: "Face Color" },
-                      { id: "accent", label: "Accent Stripe" },
-                      { id: "led", label: "LED Color" },
-                    ].map((tab) => (
-                      <button
-                        key={tab.id}
-                        onClick={() => setColorTab(tab.id as ColorTab)}
-                        className={`px-4 py-2 rounded-lg font-medium text-sm transition ${
-                          colorTab === tab.id
-                            ? "bg-[#1a1a2e] text-white"
-                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                        }`}
-                      >
-                        {tab.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Color Swatches */}
+                  {/* Color Swatches and Selection Info */}
                   <div className="flex items-start gap-8">
                     <div className="flex-1">
                       {colorTab === "led" ? (
-                        <div className="flex gap-3">
+                        <div className="flex gap-2">
                           {Object.entries(LED_COLORS).map(([name, rgb]) => (
                             <button
                               key={name}
                               onClick={() => applyColorSelection(name)}
                               title={name.charAt(0).toUpperCase() + name.slice(1)}
-                              className={`w-12 h-12 rounded-lg transition shadow-sm ${
+                              className={`w-14 h-14 rounded-lg transition ${
                                 ledColor === name
-                                  ? "ring-2 ring-offset-2 ring-[#8B3A3A] scale-110"
+                                  ? "ring-2 ring-offset-2 ring-[#8B3A3A]"
                                   : "hover:scale-105"
                               }`}
                               style={{ backgroundColor: rgb }}
@@ -713,52 +608,72 @@ function HomeContent() {
                           ))}
                         </div>
                       ) : (
-                        <div className="grid grid-cols-9 gap-2">
-                          {COLOR_ORDER.map((name) => (
-                            <button
-                              key={name}
-                              onClick={() => applyColorSelection(name)}
-                              title={COLOR_DISPLAY_NAMES[name]}
-                              className={`w-10 h-10 rounded-lg transition shadow-sm ${
-                                getCurrentColor() === name
-                                  ? "ring-2 ring-offset-2 ring-[#8B3A3A] scale-110"
-                                  : "hover:scale-105"
-                              } ${name === "white" ? "border border-gray-300" : ""}`}
-                              style={{ backgroundColor: COLOR_PALETTE[name] }}
-                            />
-                          ))}
+                        <div>
+                          {/* Row 1: First 9 colors */}
+                          <div className="flex gap-2 mb-2">
+                            {COLOR_ORDER.slice(0, 9).map((name) => (
+                              <button
+                                key={name}
+                                onClick={() => applyColorSelection(name)}
+                                title={COLOR_DISPLAY_NAMES[name]}
+                                className={`w-14 h-14 rounded-lg transition ${
+                                  getCurrentColor() === name
+                                    ? "ring-2 ring-offset-2 ring-[#8B3A3A]"
+                                    : "hover:scale-105"
+                                } ${name === "white" ? "border border-gray-400" : ""}`}
+                                style={{ backgroundColor: COLOR_PALETTE[name] }}
+                              />
+                            ))}
+                          </div>
+                          {/* Row 2: Remaining colors */}
+                          <div className="flex gap-2 mb-2">
+                            {COLOR_ORDER.slice(9).map((name) => (
+                              <button
+                                key={name}
+                                onClick={() => applyColorSelection(name)}
+                                title={COLOR_DISPLAY_NAMES[name]}
+                                className={`w-14 h-14 rounded-lg transition ${
+                                  getCurrentColor() === name
+                                    ? "ring-2 ring-offset-2 ring-[#8B3A3A]"
+                                    : "hover:scale-105"
+                                } ${name === "white" ? "border border-gray-400" : ""}`}
+                                style={{ backgroundColor: COLOR_PALETTE[name] }}
+                              />
+                            ))}
+                          </div>
+                          {/* None option for accent */}
                           {colorTab === "accent" && (
-                            <button
-                              onClick={() => applyColorSelection("none")}
-                              title="None"
-                              className={`w-10 h-10 rounded-lg transition border-2 border-gray-300 shadow-sm flex items-center justify-center ${
-                                accentColor === "none"
-                                  ? "ring-2 ring-offset-2 ring-[#8B3A3A] scale-110"
-                                  : "hover:scale-105"
-                              }`}
-                            >
-                              <span className="text-gray-400 text-xs font-medium">None</span>
-                            </button>
+                            <div className="flex gap-2 mt-2">
+                              <button
+                                onClick={() => applyColorSelection("none")}
+                                title="None"
+                                className={`w-14 h-14 rounded-lg transition bg-white border border-gray-300 flex items-center justify-center ${
+                                  accentColor === "none"
+                                    ? "ring-2 ring-offset-2 ring-[#8B3A3A]"
+                                    : "hover:scale-105"
+                                }`}
+                              >
+                                <svg className="w-8 h-8 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <line x1="4" y1="20" x2="20" y2="4" />
+                                </svg>
+                              </button>
+                            </div>
                           )}
                         </div>
                       )}
                     </div>
 
-                    {/* Current Selection */}
-                    <div className="w-48 bg-gray-50 rounded-lg p-4">
-                      <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">Selected</div>
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`w-8 h-8 rounded-lg shadow-sm ${getCurrentColor() === "white" || getCurrentColor() === "none" ? "border border-gray-300" : ""}`}
-                          style={{
-                            backgroundColor: colorTab === "led"
-                              ? LED_COLORS[getCurrentColor()]
-                              : getCurrentColor() === "none"
-                                ? "#f5f5f5"
-                                : COLOR_PALETTE[getCurrentColor()]
-                          }}
-                        />
-                        <span className="font-medium text-gray-900">
+                    {/* Currently Showing / New Selection */}
+                    <div className="text-right">
+                      <div className="mb-2">
+                        <span className="text-gray-600 font-medium">Currently Showing: </span>
+                        <span className="font-semibold text-gray-900">
+                          {COLOR_DISPLAY_NAMES[getCurrentColor()] || getCurrentColor()}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-600 font-medium">New Selection: </span>
+                        <span className="font-semibold text-gray-900">
                           {COLOR_DISPLAY_NAMES[getCurrentColor()] || getCurrentColor()}
                         </span>
                       </div>
