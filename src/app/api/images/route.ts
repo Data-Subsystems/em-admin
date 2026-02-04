@@ -6,10 +6,13 @@ const s3Client = new S3Client({
 });
 
 const BUCKET_NAME = "em-admin-assets";
-const CDN_BASE_URL = `https://${BUCKET_NAME}.s3.amazonaws.com`;
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    // Get base URL for proxy
+    const url = new URL(request.url);
+    const baseUrl = `${url.protocol}//${url.host}`;
+
     const command = new ListObjectsV2Command({
       Bucket: BUCKET_NAME,
       Prefix: "images/",
@@ -26,7 +29,7 @@ export async function GET() {
           key: obj.Key,
           filename,
           modelName,
-          url: `${CDN_BASE_URL}/${obj.Key}`,
+          url: `${baseUrl}/api/images/${encodeURIComponent(filename)}`,
           size: obj.Size,
           lastModified: obj.LastModified,
         };
