@@ -14,7 +14,7 @@ interface StatusCounts {
   error?: number;
 }
 
-const S3_BASE_URL = "https://em-admin-assets.s3.amazonaws.com/images";
+const S3_BASE_URL = "https://em-admin-assets.s3.us-east-1.amazonaws.com/images";
 
 // Color names in display order (matching reference UI)
 const COLOR_ORDER = [
@@ -46,6 +46,17 @@ const COLOR_DISPLAY_NAMES: Record<string, string> = {
   none: "None"
 };
 
+// localStorage keys
+const STORAGE_KEYS = {
+  activeTab: "em-admin-tab",
+  selectedId: "em-admin-selected",
+  colorTab: "em-admin-color-tab",
+  faceColor: "em-admin-face",
+  accentColor: "em-admin-accent",
+  ledColor: "em-admin-led",
+  upgradeETN: "em-admin-etn",
+};
+
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("scoreboards");
   const [scoreboards, setScoreboards] = useState<ScoreboardModel[]>([]);
@@ -55,6 +66,7 @@ export default function Home() {
   const [analyzing, setAnalyzing] = useState(false);
   const [statusCounts, setStatusCounts] = useState<StatusCounts>({});
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [initialized, setInitialized] = useState(false);
 
   // Customization state
   const [colorTab, setColorTab] = useState<ColorTab>("face");
@@ -62,6 +74,65 @@ export default function Home() {
   const [accentColor, setAccentColor] = useState<string>("none");
   const [ledColor, setLedColor] = useState<string>("red");
   const [upgradeETN, setUpgradeETN] = useState(false);
+
+  // Restore state from localStorage on mount
+  useEffect(() => {
+    const savedTab = localStorage.getItem(STORAGE_KEYS.activeTab) as Tab | null;
+    const savedColorTab = localStorage.getItem(STORAGE_KEYS.colorTab) as ColorTab | null;
+    const savedFace = localStorage.getItem(STORAGE_KEYS.faceColor);
+    const savedAccent = localStorage.getItem(STORAGE_KEYS.accentColor);
+    const savedLed = localStorage.getItem(STORAGE_KEYS.ledColor);
+    const savedETN = localStorage.getItem(STORAGE_KEYS.upgradeETN);
+
+    if (savedTab) setActiveTab(savedTab);
+    if (savedColorTab) setColorTab(savedColorTab);
+    if (savedFace) setFaceColor(savedFace);
+    if (savedAccent) setAccentColor(savedAccent);
+    if (savedLed) setLedColor(savedLed);
+    if (savedETN) setUpgradeETN(savedETN === "true");
+
+    setInitialized(true);
+  }, []);
+
+  // Save state to localStorage when it changes
+  useEffect(() => {
+    if (!initialized) return;
+    localStorage.setItem(STORAGE_KEYS.activeTab, activeTab);
+  }, [activeTab, initialized]);
+
+  useEffect(() => {
+    if (!initialized) return;
+    localStorage.setItem(STORAGE_KEYS.colorTab, colorTab);
+  }, [colorTab, initialized]);
+
+  useEffect(() => {
+    if (!initialized) return;
+    localStorage.setItem(STORAGE_KEYS.faceColor, faceColor);
+  }, [faceColor, initialized]);
+
+  useEffect(() => {
+    if (!initialized) return;
+    localStorage.setItem(STORAGE_KEYS.accentColor, accentColor);
+  }, [accentColor, initialized]);
+
+  useEffect(() => {
+    if (!initialized) return;
+    localStorage.setItem(STORAGE_KEYS.ledColor, ledColor);
+  }, [ledColor, initialized]);
+
+  useEffect(() => {
+    if (!initialized) return;
+    localStorage.setItem(STORAGE_KEYS.upgradeETN, String(upgradeETN));
+  }, [upgradeETN, initialized]);
+
+  useEffect(() => {
+    if (!initialized) return;
+    if (selectedScoreboard) {
+      localStorage.setItem(STORAGE_KEYS.selectedId, selectedScoreboard.id);
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.selectedId);
+    }
+  }, [selectedScoreboard, initialized]);
 
   // Get image URL
   const getImageUrl = (filename: string) => {
@@ -178,6 +249,17 @@ export default function Home() {
     fetchScoreboards();
     fetchAnalysisStatus();
   }, [fetchScoreboards, fetchAnalysisStatus]);
+
+  // Restore selected scoreboard after data loads
+  useEffect(() => {
+    if (scoreboards.length > 0 && !selectedScoreboard && initialized) {
+      const savedId = localStorage.getItem(STORAGE_KEYS.selectedId);
+      if (savedId) {
+        const saved = scoreboards.find((s) => s.id === savedId);
+        if (saved) setSelectedScoreboard(saved);
+      }
+    }
+  }, [scoreboards, selectedScoreboard, initialized]);
 
   // Get current color for display
   const getCurrentColor = () => {
