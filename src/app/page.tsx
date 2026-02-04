@@ -368,15 +368,16 @@ function HomeContent() {
     }
   }, [selectedScoreboard, faceColor, accentColor, ledColor, useGeneratedMode]);
 
-  // Generate image
+  // Generate image instantly via Modal
   const handleGenerate = async () => {
     if (!selectedScoreboard) return;
 
     setGenerating(true);
-    setGenerationStatus("creating");
+    setGenerationStatus("generating");
+    setMessage(null);
 
     try {
-      const response = await fetch("/api/colorpicker/generate", {
+      const response = await fetch("/api/colorpicker/generate-now", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -389,20 +390,19 @@ function HomeContent() {
 
       const data = await response.json();
 
-      if (data.exists) {
-        setGeneratedImageUrl(data.url);
+      if (data.success && data.url) {
+        setGeneratedImageUrl(data.url + "?t=" + Date.now()); // Cache bust
         setGenerationStatus("ready");
-        setMessage({ type: "success", text: "Image already exists!" });
-      } else if (data.success) {
-        setGenerationStatus(data.status);
         setMessage({
           type: "success",
-          text: `Task created (${data.status}). Run Modal batch processor to generate.`,
+          text: data.exists ? "Image loaded!" : `Generated in ${data.duration_ms}ms`
         });
       } else {
+        setGenerationStatus("error");
         setMessage({ type: "error", text: data.error || "Generation failed" });
       }
     } catch (error) {
+      setGenerationStatus("error");
       setMessage({
         type: "error",
         text: error instanceof Error ? error.message : "Generation failed",
@@ -662,13 +662,13 @@ function HomeContent() {
                         <span className={`px-3 py-1 rounded-full text-xs font-medium ${
                           generationStatus === "ready" || generationStatus === "completed"
                             ? "bg-green-100 text-green-800"
-                            : generationStatus === "pending"
-                            ? "bg-yellow-100 text-yellow-800"
-                            : generationStatus === "processing"
-                            ? "bg-blue-100 text-blue-800"
+                            : generationStatus === "generating"
+                            ? "bg-blue-100 text-blue-800 animate-pulse"
+                            : generationStatus === "error"
+                            ? "bg-red-100 text-red-800"
                             : "bg-gray-100 text-gray-800"
                         }`}>
-                          {generationStatus === "ready" ? "Ready" : generationStatus}
+                          {generationStatus === "ready" ? "Ready" : generationStatus === "generating" ? "Generating..." : generationStatus}
                         </span>
                       )}
                       <button
@@ -701,19 +701,25 @@ function HomeContent() {
                         </div>
                       ) : (
                         <div className="w-full max-w-2xl aspect-[16/9] bg-gray-100 rounded-lg flex flex-col items-center justify-center text-gray-500">
-                          <svg className="w-16 h-16 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                          </svg>
-                          <p className="text-lg font-medium mb-2">No Generated Image</p>
-                          <p className="text-sm text-center max-w-md">
-                            {generationStatus === "pending" ? (
-                              <>Task is pending. Run <code className="bg-gray-200 px-1 rounded">modal run</code> to generate.</>
-                            ) : generationStatus === "processing" ? (
-                              <>Image is being generated...</>
-                            ) : (
-                              <>Click &quot;Generate Image&quot; to create this color combination</>
-                            )}
-                          </p>
+                          {generationStatus === "generating" ? (
+                            <>
+                              <div className="w-16 h-16 mb-4 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                              <p className="text-lg font-medium mb-2">Generating Image...</p>
+                              <p className="text-sm text-center max-w-md">
+                                This may take a few seconds
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-16 h-16 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                              </svg>
+                              <p className="text-lg font-medium mb-2">No Generated Image</p>
+                              <p className="text-sm text-center max-w-md">
+                                Click &quot;Generate Image&quot; to create this color combination
+                              </p>
+                            </>
+                          )}
                         </div>
                       )
                     ) : (
