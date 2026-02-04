@@ -111,6 +111,7 @@ def normalize_model_name(model: str) -> str:
     ],
     timeout=3600,
     retries=2,
+    max_containers=100,  # Allow up to 100 concurrent containers
 )
 class ImageGenerator:
 
@@ -825,9 +826,38 @@ def populate_tasks(models: list[str] = None, reset_failed: bool = True):
     secrets=[modal.Secret.from_name("supabase-credentials")],
     timeout=14400,  # 4 hours
 )
+@modal.fastapi_endpoint(method="POST", docs=True)
+def start_batch_processing(item: dict = {}) -> dict:
+    """
+    Start batch processing via web endpoint.
+    POST body (optional): {"batch_size": 100, "max_parallel": 100, "max_tasks": 1000}
+    """
+    batch_size = item.get('batch_size', 100)
+    max_parallel = item.get('max_parallel', 100)
+    max_tasks = item.get('max_tasks')
+
+    # Spawn the batch processing as a background task
+    run_batch_processing.spawn(
+        batch_size=batch_size,
+        max_parallel=max_parallel,
+        max_tasks=max_tasks,
+    )
+
+    return {
+        "success": True,
+        "message": f"Batch processing started with batch_size={batch_size}, max_parallel={max_parallel}",
+        "max_tasks": max_tasks,
+    }
+
+
+@app.function(
+    image=image,
+    secrets=[modal.Secret.from_name("supabase-credentials")],
+    timeout=14400,  # 4 hours
+)
 def run_batch_processing(
     batch_size: int = 100,
-    max_parallel: int = 90,
+    max_parallel: int = 100,  # Scale up to 100 containers
     max_tasks: int = None,
 ):
     """
