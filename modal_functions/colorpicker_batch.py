@@ -18,6 +18,7 @@ image = modal.Image.debian_slim(python_version="3.11").pip_install(
     "boto3",
     "numpy",
     "supabase",
+    "fastapi",
 )
 
 # Volume for caching masks between containers
@@ -183,47 +184,47 @@ class ImageGenerator:
 
         return None
 
-    def colorize_image(self, img: Image.Image, color_name: str) -> Image.Image:
+    def colorize_image(self, img: Image.Image, color_name: str, negate: bool = True) -> Image.Image:
         """
-        Colorize image using exact PHP algorithm:
-        1. Grayscale
-        2. Contrast (max)
-        3. Negate
-        4. Colorize with RGB
+        Colorize image using PHP algorithm.
 
-        PHP code reference:
-        imagefilter($resImg, IMG_FILTER_GRAYSCALE);
-        imagefilter($resImg, IMG_FILTER_CONTRAST, 255);
-        imagefilter($resImg, IMG_FILTER_NEGATE);
-        imagefilter($resImg, IMG_FILTER_COLORIZE, $nR, $nG, $nB);
+        For Face layer: negate=False
+        For other layers (Accent, Captions, LED): negate=True
+
+        The masks have:
+        - Alpha channel defining where the layer appears
+        - RGB values that get transformed to the target color
         """
         rgb = COLORS.get(color_name, (255, 255, 255))
 
-        # Preserve alpha channel
-        if img.mode == 'RGBA':
-            alpha = img.split()[3]
-        else:
+        # Ensure RGBA
+        if img.mode != 'RGBA':
             img = img.convert('RGBA')
-            alpha = img.split()[3]
 
-        # 1. Convert to grayscale
+        # Get alpha channel
+        alpha = img.split()[3]
+
+        # Convert to grayscale
         gray = ImageOps.grayscale(img)
 
-        # 2. Apply high contrast (PHP IMG_FILTER_CONTRAST with 255 = max contrast)
+        # Increase contrast (PHP uses negative value for more contrast)
         enhancer = ImageEnhance.Contrast(gray)
-        contrasted = enhancer.enhance(4.0)
+        contrasted = enhancer.enhance(2.0)
 
-        # 3. Negate (invert)
-        negated = ImageOps.invert(contrasted)
+        # Negate if needed (all layers except Face)
+        if negate:
+            contrasted = ImageOps.invert(contrasted)
 
-        # 4. Colorize - multiply grayscale by color
-        data = np.array(negated, dtype=np.float32) / 255.0
+        # Colorize: multiply grayscale intensity by target color
+        gray_arr = np.array(contrasted, dtype=np.float32) / 255.0
         r, g, b = rgb
 
-        colored = np.zeros((*data.shape, 3), dtype=np.uint8)
-        colored[:, :, 0] = (data * r).clip(0, 255).astype(np.uint8)
-        colored[:, :, 1] = (data * g).clip(0, 255).astype(np.uint8)
-        colored[:, :, 2] = (data * b).clip(0, 255).astype(np.uint8)
+        # Create colored image
+        h, w = gray_arr.shape
+        colored = np.zeros((h, w, 3), dtype=np.uint8)
+        colored[:, :, 0] = (gray_arr * r).clip(0, 255).astype(np.uint8)
+        colored[:, :, 1] = (gray_arr * g).clip(0, 255).astype(np.uint8)
+        colored[:, :, 2] = (gray_arr * b).clip(0, 255).astype(np.uint8)
 
         result = Image.fromarray(colored, 'RGB').convert('RGBA')
         result.putalpha(alpha)
@@ -253,34 +254,34 @@ class ImageGenerator:
         if frame:
             layers.append(('Frame', frame.convert('RGBA')))
 
-        # 2. Face (colorize with primary)
+        # 2. Face (colorize with primary, negate=False)
         face = self.get_mask(model_normalized, "Face")
         if face:
-            layers.append(('Face', self.colorize_image(face, primary)))
+            layers.append(('Face', self.colorize_image(face, primary, negate=False)))
 
-        # 3. Accent-Striping (colorize with accent)
+        # 3. Accent-Striping (colorize with accent, negate=True)
         accent_layer = self.get_mask(model_normalized, "Accent-Striping")
         if accent_layer:
-            layers.append(('Accent-Striping', self.colorize_image(accent_layer, accent_color)))
+            layers.append(('Accent-Striping', self.colorize_image(accent_layer, accent_color, negate=True)))
 
         # 4. Masks (no colorize)
         masks = self.get_mask(model_normalized, "Masks")
         if masks:
             layers.append(('Masks', masks.convert('RGBA')))
 
-        # 5. LED-Glow (colorize unless multicolor)
+        # 5. LED-Glow (colorize unless multicolor, negate=True)
         led_layer = self.get_mask(model_normalized, "LED-Glow")
         if led_layer:
             if is_multicolor_led(model):
                 # For multicolor, add LED layer without colorization
                 layers.append(('LED-Glow', led_layer.convert('RGBA')))
             else:
-                layers.append(('LED-Glow', self.colorize_image(led_layer, leds)))
+                layers.append(('LED-Glow', self.colorize_image(led_layer, leds, negate=True)))
 
-        # 6. Captions (colorize with white - default)
+        # 6. Captions (colorize with white, negate=True)
         captions = self.get_mask(model_normalized, "Captions")
         if captions:
-            layers.append(('Captions', self.colorize_image(captions, 'white')))
+            layers.append(('Captions', self.colorize_image(captions, 'white', negate=True)))
 
         if not layers:
             return None
@@ -398,6 +399,212 @@ class ImageGenerator:
                 results["errors"].append(f"{task.get('model', 'unknown')}: {str(e)[:100]}")
 
         return results
+
+
+# ============================================================
+# SINGLE IMAGE GENERATION (for UI calls)
+# ============================================================
+
+@app.function(
+    image=image,
+    cpu=1.0,
+    memory=1024,
+    volumes={"/cache": masks_volume},
+    secrets=[
+        modal.Secret.from_name("aws-credentials"),
+        modal.Secret.from_name("supabase-credentials"),
+    ],
+    timeout=300,
+)
+@modal.fastapi_endpoint(method="POST", docs=True)
+def generate_single_image(item: dict) -> dict:
+    """
+    Generate a single image immediately (called from API).
+    POST body: {"model": "lx1234", "primary": "navy_blue", "accent": "royal_blue", "leds": "amber"}
+    Returns the S3 URL on success.
+    """
+    import time
+    start = time.time()
+
+    # Extract parameters from request body
+    model = item.get('model')
+    primary = item.get('primary', 'navy_blue')
+    accent = item.get('accent', 'royal_blue')
+    leds = item.get('leds', 'amber')
+    width = item.get('width', 720)
+
+    if not model:
+        return {"success": False, "error": "Model is required"}
+
+    s3 = boto3.client('s3')
+    bucket = 'em-admin-assets'
+
+    # Build S3 key
+    s3_key = f"colorpicker-generated/{model}/{primary}-{accent}-{leds}.png"
+
+    # Check if already exists
+    try:
+        s3.head_object(Bucket=bucket, Key=s3_key)
+        return {
+            "success": True,
+            "exists": True,
+            "url": f"https://{bucket}.s3.us-east-1.amazonaws.com/{s3_key}",
+            "duration_ms": int((time.time() - start) * 1000),
+        }
+    except:
+        pass  # Doesn't exist, generate it
+
+    # Sync masks if needed
+    sync_marker = "/cache/masks_synced_v3"
+    if not os.path.exists(sync_marker):
+        print("Syncing masks from S3...")
+        paginator = s3.get_paginator('list_objects_v2')
+        count = 0
+        for page in paginator.paginate(Bucket=bucket, Prefix='masks/'):
+            for obj in page.get('Contents', []):
+                key = obj['Key']
+                local_path = f"/cache/{key}"
+                os.makedirs(os.path.dirname(local_path), exist_ok=True)
+                if not os.path.exists(local_path):
+                    try:
+                        response = s3.get_object(Bucket=bucket, Key=key)
+                        with open(local_path, 'wb') as f:
+                            f.write(response['Body'].read())
+                        count += 1
+                    except Exception as e:
+                        print(f"Error downloading {key}: {e}")
+        open(sync_marker, 'w').close()
+        print(f"Masks synced! Downloaded {count} files.")
+
+    # Generate image using same logic as ImageGenerator
+    model_normalized = normalize_model_name(model)
+    accent_color = primary if accent in ('none', 'n/a') else accent
+
+    def get_mask(m: str, layer: str):
+        paths = [
+            f"/cache/masks/{m}/{layer}.png",
+            f"/cache/masks/{m.lower()}/{layer}.png",
+            f"/cache/masks/{m.upper()}/{layer}.png",
+        ]
+        for path in paths:
+            if os.path.exists(path):
+                try:
+                    return Image.open(path)
+                except:
+                    continue
+        return None
+
+    def colorize(img: Image.Image, color_name: str, negate: bool = True) -> Image.Image:
+        rgb = COLORS.get(color_name, (255, 255, 255))
+        if img.mode != 'RGBA':
+            img = img.convert('RGBA')
+        alpha = img.split()[3]
+
+        gray = ImageOps.grayscale(img)
+        enhancer = ImageEnhance.Contrast(gray)
+        contrasted = enhancer.enhance(2.0)
+
+        if negate:
+            contrasted = ImageOps.invert(contrasted)
+
+        gray_arr = np.array(contrasted, dtype=np.float32) / 255.0
+        r, g, b = rgb
+        h, w = gray_arr.shape
+        colored = np.zeros((h, w, 3), dtype=np.uint8)
+        colored[:, :, 0] = (gray_arr * r).clip(0, 255).astype(np.uint8)
+        colored[:, :, 1] = (gray_arr * g).clip(0, 255).astype(np.uint8)
+        colored[:, :, 2] = (gray_arr * b).clip(0, 255).astype(np.uint8)
+
+        result = Image.fromarray(colored, 'RGB').convert('RGBA')
+        result.putalpha(alpha)
+        return result
+
+    layers = []
+
+    # Build layers
+    frame = get_mask(model_normalized, "Frame")
+    if frame:
+        layers.append(frame.convert('RGBA'))
+
+    face = get_mask(model_normalized, "Face")
+    if face:
+        layers.append(colorize(face, primary, negate=False))  # Face: no negate
+
+    accent_layer = get_mask(model_normalized, "Accent-Striping")
+    if accent_layer:
+        layers.append(colorize(accent_layer, accent_color, negate=True))
+
+    masks = get_mask(model_normalized, "Masks")
+    if masks:
+        layers.append(masks.convert('RGBA'))
+
+    led_layer = get_mask(model_normalized, "LED-Glow")
+    if led_layer:
+        if is_multicolor_led(model):
+            layers.append(led_layer.convert('RGBA'))
+        else:
+            layers.append(colorize(led_layer, leds, negate=True))
+
+    captions = get_mask(model_normalized, "Captions")
+    if captions:
+        layers.append(colorize(captions, 'white', negate=True))
+
+    if not layers:
+        return {
+            "success": False,
+            "error": f"No layers found for model {model}",
+            "duration_ms": int((time.time() - start) * 1000),
+        }
+
+    # Composite
+    result = Image.new('RGBA', layers[0].size, (0, 0, 0, 0))
+    for layer in layers:
+        if layer.size != result.size:
+            layer = layer.resize(result.size, Image.LANCZOS)
+        result = Image.alpha_composite(result, layer)
+
+    # Resize if needed
+    if width and width != result.width:
+        ratio = width / result.width
+        new_height = int(result.height * ratio)
+        result = result.resize((width, new_height), Image.LANCZOS)
+
+    # Save to bytes
+    buffer = io.BytesIO()
+    result.save(buffer, format='PNG', optimize=True)
+    image_bytes = buffer.getvalue()
+
+    # Upload to S3
+    s3.put_object(
+        Bucket=bucket,
+        Key=s3_key,
+        Body=image_bytes,
+        ContentType='image/png',
+        CacheControl='public, max-age=31536000, immutable',
+    )
+
+    # Update Supabase task if exists
+    try:
+        supabase = create_client(
+            os.environ['SUPABASE_URL'],
+            os.environ['SUPABASE_SERVICE_KEY']
+        )
+        supabase.table('colorpicker_tasks').update({
+            'status': 'completed',
+            's3_key': s3_key,
+            'file_size_bytes': len(image_bytes),
+            'completed_at': datetime.now(timezone.utc).isoformat(),
+        }).eq('model', model).eq('primary_color', primary).eq('accent_color', accent).eq('led_color', leds).execute()
+    except Exception as e:
+        print(f"Warning: Could not update Supabase task: {e}")
+
+    return {
+        "success": True,
+        "exists": False,
+        "url": f"https://{bucket}.s3.us-east-1.amazonaws.com/{s3_key}",
+        "size_bytes": len(image_bytes),
+        "duration_ms": int((time.time() - start) * 1000),
+    }
 
 
 # ============================================================
