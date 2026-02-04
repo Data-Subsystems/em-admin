@@ -856,7 +856,7 @@ def start_batch_processing(item: dict = {}) -> dict:
     timeout=14400,  # 4 hours
 )
 def run_batch_processing(
-    batch_size: int = 100,
+    batch_size: int = 10,  # Tasks per container (smaller = more parallelism)
     max_parallel: int = 100,  # Scale up to 100 containers
     max_tasks: int = None,
 ):
