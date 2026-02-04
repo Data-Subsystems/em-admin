@@ -112,7 +112,7 @@ def normalize_model_name(model: str) -> str:
     ],
     timeout=3600,
     retries=2,
-    max_containers=100,  # Allow up to 100 concurrent containers
+    max_containers=1000,  # Allow up to 1000 concurrent containers
 )
 class ImageGenerator:
 
@@ -856,10 +856,10 @@ def populate_tasks(models: list[str] = None, reset_failed: bool = True):
 def start_batch_processing(item: dict = {}) -> dict:
     """
     Start batch processing via web endpoint.
-    POST body (optional): {"batch_size": 100, "max_parallel": 100, "max_tasks": 1000}
+    POST body (optional): {"batch_size": 10, "max_parallel": 1000, "max_tasks": 1000}
     """
-    batch_size = item.get('batch_size', 100)
-    max_parallel = item.get('max_parallel', 100)
+    batch_size = item.get('batch_size', 10)
+    max_parallel = item.get('max_parallel', 1000)
     max_tasks = item.get('max_tasks')
 
     # Spawn the batch processing as a background task
@@ -883,7 +883,7 @@ def start_batch_processing(item: dict = {}) -> dict:
 )
 def run_batch_processing(
     batch_size: int = 10,  # Tasks per container (smaller = more parallelism)
-    max_parallel: int = 100,  # Scale up to 100 containers
+    max_parallel: int = 1000,  # Scale up to 1000 containers
     max_tasks: int = None,
 ):
     """

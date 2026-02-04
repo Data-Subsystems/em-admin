@@ -17,6 +17,9 @@ Electro-Mech Scoreboard Customizer - Allows users to preview scoreboard models w
 npm run dev          # Dev server on port 3000
 npm run build        # Production build
 npm run lint         # ESLint
+npm test             # Run tests
+npm run test:watch   # Run tests in watch mode
+npm run test:coverage # Run tests with coverage
 ```
 
 ## Architecture
@@ -106,6 +109,8 @@ AWS_REGION=us-east-1
 - `scoreboard_models`: All scoreboard models with analysis results
 - `analysis_jobs`: Batch job tracking
 - `custom_configurations`: User-created customizations
+- `colorpicker_tasks`: Batch generation task queue (model, colors, status, s3_key)
+- `colorpicker_batches`: Batch processing job history
 
 ## API Endpoints
 
@@ -117,6 +122,19 @@ AWS_REGION=us-east-1
 | POST | /api/scoreboards/[id]/analyze | Analyze single image |
 | POST | /api/analyze/batch | Batch analyze pending |
 | GET | /api/analyze/batch | Get analysis status |
+
+### ColorPicker Batch Generation
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | /api/colorpicker/generate-all | Queue all 684 color combinations for a model |
+| GET | /api/colorpicker/generate-all?model=X | Get progress for a model |
+| GET | /api/colorpicker/batch | Get overall batch status and model progress |
+| GET | /api/colorpicker/batch?model=X | Get completed images for a model |
+| POST | /api/colorpicker/batch/start | Start batch processing via Modal |
+| POST | /api/colorpicker/batch | Stop batch (action=stop) or reset failed (action=reset-failed) |
+| POST | /api/colorpicker/reset-stuck | Reset tasks stuck in processing >5min |
+| GET | /api/colorpicker/debug | Debug stuck/pending tasks |
 
 ## ColorizedScoreboard Component
 
@@ -178,6 +196,38 @@ UI state is persisted to localStorage:
 3. **Customize**: Pick colors in Customizer tab with live preview
 4. **Analyze** (optional): Process images with Nova Lite for zone detection
 5. **Export**: Copy configuration to clipboard
+
+## Batch Image Generation
+
+The ColorPicker batch system generates pre-rendered images for all color combinations:
+
+**Color Combinations per Model**: 18 face × 19 accent × 2 LED = **684 images**
+
+**Workflow**:
+1. Click "Generate All" to queue tasks for a model
+2. Click "Start Processing" to run on Modal.com (up to 1000 containers)
+3. Monitor progress in real-time via Supabase
+4. Generated images stored in S3: `generated/{model}/{primary}--{accent}--{led}.png`
+
+**Modal Processing** (`modal_functions/colorpicker_batch.py`):
+- PHP-style additive colorization: `pixel + color` (not multiplicative)
+- Layer-based composition: Frame, Face, Accent-Striping, Masks, LED-Glow, Captions
+- All mask layers use white content requiring `negate=True` before colorization
+- Images resized to match original dimensions from electro-mech.com
+
+**Task Status Flow**: pending → processing → completed/failed
+
+## Testing
+
+Test framework: Vitest with jsdom environment
+
+```bash
+npm test              # Run all tests
+npm run test:watch    # Watch mode
+npm run test:coverage # Coverage report
+```
+
+Coverage thresholds: 80% for branches, functions, lines, statements
 
 ## Working Preferences
 

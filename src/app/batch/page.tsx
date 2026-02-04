@@ -74,6 +74,7 @@ export default function BatchProcessingPage() {
   const [loading, setLoading] = useState(true);
   const [stopping, setStopping] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -113,18 +114,41 @@ export default function BatchProcessingPage() {
     setLoadingImages(false);
   };
 
-  // Start batch processing
+  // Generate all tasks for all models
+  const handleGenerateAll = async () => {
+    setGenerating(true);
+    try {
+      const response = await fetch("/api/colorpicker/generate-all-models", {
+        method: "POST",
+      });
+      const data = await response.json();
+      if (data.success) {
+        setMessage({
+          type: "success",
+          text: `${data.message} (${data.newTasksCreated} new, ${data.failedTasksReset} reset)`,
+        });
+        fetchStatus();
+      } else {
+        setMessage({ type: "error", text: data.error || "Failed to generate tasks" });
+      }
+    } catch (error) {
+      setMessage({ type: "error", text: "Failed to generate tasks" });
+    }
+    setGenerating(false);
+  };
+
+  // Start batch processing with up to 1000 containers
   const handleStart = async () => {
     setStarting(true);
     try {
       const response = await fetch("/api/colorpicker/batch/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ max_parallel: 100 }),
+        body: JSON.stringify({ max_parallel: 1000 }),
       });
       const data = await response.json();
       if (data.success) {
-        setMessage({ type: "success", text: "Batch processing started! Containers spinning up..." });
+        setMessage({ type: "success", text: "Batch processing started! Up to 1000 containers spinning up..." });
         // Start auto-refresh to see progress
         setAutoRefresh(true);
       } else {
@@ -182,6 +206,8 @@ export default function BatchProcessingPage() {
   const openModelModal = (model: string) => {
     setSelectedModel(model);
     fetchModelImages(model);
+    // Save to localStorage so "Back to Customizer" returns to this model
+    localStorage.setItem("em-admin-batch-model", model);
   };
 
   // Initial fetch
@@ -229,6 +255,31 @@ export default function BatchProcessingPage() {
             </a>
           </div>
           <div className="flex items-center gap-4">
+            {/* Generate All button */}
+            {!isProcessing && (
+              <button
+                onClick={handleGenerateAll}
+                disabled={generating}
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition font-medium text-sm flex items-center gap-2"
+              >
+                {generating ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    Generate All
+                  </>
+                )}
+              </button>
+            )}
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -287,7 +338,18 @@ export default function BatchProcessingPage() {
                 )}
               </button>
             )}
-            <a href="/" className="px-3 py-1.5 text-sm text-gray-300 hover:text-white hover:bg-white/10 rounded transition">
+            <a
+              href="/"
+              onClick={(e) => {
+                // If a model was viewed, navigate to customizer with that model
+                const lastModel = localStorage.getItem("em-admin-batch-model");
+                if (lastModel) {
+                  e.preventDefault();
+                  window.location.href = `/?model=${encodeURIComponent(lastModel)}&tab=customizer`;
+                }
+              }}
+              className="px-3 py-1.5 text-sm text-gray-300 hover:text-white hover:bg-white/10 rounded transition"
+            >
               Back to Customizer
             </a>
           </div>
