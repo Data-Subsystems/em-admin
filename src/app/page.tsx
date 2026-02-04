@@ -386,13 +386,70 @@ export default function Home() {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                   {/* Scoreboard Preview */}
                   <div className="lg:col-span-2 bg-white rounded-xl shadow-sm p-6">
-                    <div className="bg-gray-900 rounded-lg p-8 flex items-center justify-center">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={getImageUrl(selectedScoreboard.image_filename)}
-                        alt={selectedScoreboard.model_name}
-                        className="max-w-full max-h-[400px] object-contain"
+                    {/* Preview with color overlay */}
+                    <div
+                      className="relative rounded-lg overflow-hidden transition-all duration-300"
+                      style={{
+                        backgroundColor: COLOR_PALETTE[faceColor] || "#1a1a2e",
+                        border: accentColor !== "none" ? `8px solid ${COLOR_PALETTE[accentColor]}` : "8px solid transparent",
+                        boxShadow: `inset 0 0 100px ${LED_COLORS[ledColor]}40, 0 4px 20px rgba(0,0,0,0.3)`
+                      }}
+                    >
+                      <div className="p-6 flex items-center justify-center min-h-[300px]">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={getImageUrl(selectedScoreboard.image_filename)}
+                          alt={selectedScoreboard.model_name}
+                          className="max-w-full max-h-[350px] object-contain relative z-10"
+                          style={{
+                            filter: "drop-shadow(0 4px 8px rgba(0,0,0,0.3))",
+                          }}
+                        />
+                      </div>
+                      {/* LED Glow Effect */}
+                      <div
+                        className="absolute inset-0 pointer-events-none transition-all duration-300"
+                        style={{
+                          background: `radial-gradient(ellipse at center, ${LED_COLORS[ledColor]}30 0%, transparent 60%)`,
+                        }}
                       />
+                    </div>
+
+                    {/* Color Preview Summary */}
+                    <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                      <div className="text-xs text-gray-500 uppercase tracking-wide mb-3">Current Configuration</div>
+                      <div className="flex items-center gap-6">
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="w-8 h-8 rounded-lg shadow-sm border border-gray-200"
+                            style={{ backgroundColor: COLOR_PALETTE[faceColor] }}
+                          />
+                          <div>
+                            <div className="text-xs text-gray-500">Face</div>
+                            <div className="text-sm font-medium text-gray-900">{COLOR_DISPLAY_NAMES[faceColor]}</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div
+                            className={`w-8 h-8 rounded-lg shadow-sm ${accentColor === "none" ? "border-2 border-dashed border-gray-300" : "border border-gray-200"}`}
+                            style={{ backgroundColor: accentColor !== "none" ? COLOR_PALETTE[accentColor] : "transparent" }}
+                          />
+                          <div>
+                            <div className="text-xs text-gray-500">Accent</div>
+                            <div className="text-sm font-medium text-gray-900">{COLOR_DISPLAY_NAMES[accentColor]}</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="w-8 h-8 rounded-lg shadow-sm border border-gray-200"
+                            style={{ backgroundColor: LED_COLORS[ledColor], boxShadow: `0 0 10px ${LED_COLORS[ledColor]}` }}
+                          />
+                          <div>
+                            <div className="text-xs text-gray-500">LED</div>
+                            <div className="text-sm font-medium text-gray-900">{COLOR_DISPLAY_NAMES[ledColor] || ledColor.charAt(0).toUpperCase() + ledColor.slice(1)}</div>
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
                     {/* ETN Upgrade Option */}
