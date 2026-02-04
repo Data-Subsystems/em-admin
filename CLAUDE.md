@@ -1,4 +1,4 @@
-# EM Scoreboard Customizer
+# EM Admin
 
 Electro-Mech Scoreboard Image Tool - Analyzes scoreboard images using Amazon Nova Lite to create universal customization configurations.
 
