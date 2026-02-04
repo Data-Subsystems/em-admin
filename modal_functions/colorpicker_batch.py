@@ -113,7 +113,8 @@ def normalize_model_name(model: str) -> str:
 )
 class ImageGenerator:
 
-    def __enter__(self):
+    @modal.enter()
+    def setup(self):
         """Initialize connections on container start"""
         self.s3 = boto3.client('s3')
         self.bucket = 'em-admin-assets'
