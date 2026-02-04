@@ -420,7 +420,7 @@ class ImageGenerator:
 def generate_single_image(item: dict) -> dict:
     """
     Generate a single image immediately (called from API).
-    POST body: {"model": "lx1234", "primary": "navy_blue", "accent": "royal_blue", "leds": "amber"}
+    POST body: {"model": "lx1234", "primary": "navy_blue", "accent": "royal_blue", "leds": "amber", "session_id": "..."}
     Returns the S3 URL on success.
     """
     import time
@@ -432,6 +432,7 @@ def generate_single_image(item: dict) -> dict:
     accent = item.get('accent', 'royal_blue')
     leds = item.get('leds', 'amber')
     width = item.get('width', 720)
+    session_id = item.get('session_id')  # For progress tracking
 
     if not model:
         return {"success": False, "error": "Model is required"}
@@ -439,22 +440,86 @@ def generate_single_image(item: dict) -> dict:
     s3 = boto3.client('s3')
     bucket = 'em-admin-assets'
 
+    # Initialize Supabase for progress tracking
+    supabase = None
+    progress_id = None
+    if session_id:
+        try:
+            supabase = create_client(
+                os.environ['SUPABASE_URL'],
+                os.environ['SUPABASE_SERVICE_KEY']
+            )
+            # Create progress record
+            result = supabase.table('colorpicker_generation_progress').insert({
+                'session_id': session_id,
+                'model': model,
+                'primary_color': primary,
+                'accent_color': accent,
+                'led_color': leds,
+                'status': 'running',
+                'current_step': 'Initializing...',
+                'step_number': 0,
+                'progress_percent': 0,
+                'started_at': datetime.now(timezone.utc).isoformat(),
+            }).execute()
+            progress_id = result.data[0]['id'] if result.data else None
+        except Exception as e:
+            print(f"Warning: Could not create progress record: {e}")
+
+    def update_progress(step: str, step_number: int, percent: int):
+        """Update progress in Supabase"""
+        if supabase and progress_id:
+            try:
+                supabase.table('colorpicker_generation_progress').update({
+                    'current_step': step,
+                    'step_number': step_number,
+                    'progress_percent': percent,
+                    'updated_at': datetime.now(timezone.utc).isoformat(),
+                }).eq('id', progress_id).execute()
+            except Exception as e:
+                print(f"Warning: Could not update progress: {e}")
+
+    def complete_progress(success: bool, url: str = None, error: str = None):
+        """Mark progress as complete or error"""
+        if supabase and progress_id:
+            try:
+                data = {
+                    'status': 'completed' if success else 'error',
+                    'current_step': 'Complete!' if success else 'Error',
+                    'step_number': 7 if success else -1,
+                    'progress_percent': 100 if success else 0,
+                    'completed_at': datetime.now(timezone.utc).isoformat(),
+                    'updated_at': datetime.now(timezone.utc).isoformat(),
+                }
+                if url:
+                    data['result_url'] = url
+                if error:
+                    data['error_message'] = error[:500]
+                supabase.table('colorpicker_generation_progress').update(data).eq('id', progress_id).execute()
+            except Exception as e:
+                print(f"Warning: Could not complete progress: {e}")
+
     # Build S3 key
     s3_key = f"colorpicker-generated/{model}/{primary}-{accent}-{leds}.png"
+    result_url = f"https://{bucket}.s3.us-east-1.amazonaws.com/{s3_key}"
 
-    # Check if already exists
+    # Step 1: Check if already exists
+    update_progress("Checking cache...", 1, 10)
     try:
         s3.head_object(Bucket=bucket, Key=s3_key)
+        complete_progress(True, url=result_url)
         return {
             "success": True,
             "exists": True,
-            "url": f"https://{bucket}.s3.us-east-1.amazonaws.com/{s3_key}",
+            "url": result_url,
+            "session_id": session_id,
             "duration_ms": int((time.time() - start) * 1000),
         }
     except:
         pass  # Doesn't exist, generate it
 
-    # Sync masks if needed
+    # Step 2: Sync masks if needed
+    update_progress("Loading masks...", 2, 20)
     sync_marker = "/cache/masks_synced_v3"
     if not os.path.exists(sync_marker):
         print("Syncing masks from S3...")
@@ -521,15 +586,19 @@ def generate_single_image(item: dict) -> dict:
 
     layers = []
 
-    # Build layers
+    # Step 3: Build layers - Frame
+    update_progress("Loading frame...", 3, 30)
     frame = get_mask(model_normalized, "Frame")
     if frame:
         layers.append(frame.convert('RGBA'))
 
+    # Step 4: Build layers - Face
+    update_progress("Colorizing face...", 4, 45)
     face = get_mask(model_normalized, "Face")
     if face:
         layers.append(colorize(face, primary, negate=False))  # Face: no negate
 
+    # Accent striping
     accent_layer = get_mask(model_normalized, "Accent-Striping")
     if accent_layer:
         layers.append(colorize(accent_layer, accent_color, negate=True))
@@ -538,6 +607,8 @@ def generate_single_image(item: dict) -> dict:
     if masks:
         layers.append(masks.convert('RGBA'))
 
+    # Step 5: Build layers - LEDs
+    update_progress("Colorizing LEDs...", 5, 60)
     led_layer = get_mask(model_normalized, "LED-Glow")
     if led_layer:
         if is_multicolor_led(model):
@@ -545,18 +616,22 @@ def generate_single_image(item: dict) -> dict:
         else:
             layers.append(colorize(led_layer, leds, negate=True))
 
+    # Captions
     captions = get_mask(model_normalized, "Captions")
     if captions:
         layers.append(colorize(captions, 'white', negate=True))
 
     if not layers:
+        complete_progress(False, error=f"No layers found for model {model}")
         return {
             "success": False,
             "error": f"No layers found for model {model}",
+            "session_id": session_id,
             "duration_ms": int((time.time() - start) * 1000),
         }
 
-    # Composite
+    # Step 6: Composite all layers
+    update_progress("Compositing layers...", 6, 75)
     result = Image.new('RGBA', layers[0].size, (0, 0, 0, 0))
     for layer in layers:
         if layer.size != result.size:
@@ -574,7 +649,8 @@ def generate_single_image(item: dict) -> dict:
     result.save(buffer, format='PNG', optimize=True)
     image_bytes = buffer.getvalue()
 
-    # Upload to S3
+    # Step 7: Upload to S3
+    update_progress("Uploading to S3...", 7, 90)
     s3.put_object(
         Bucket=bucket,
         Key=s3_key,
@@ -584,24 +660,25 @@ def generate_single_image(item: dict) -> dict:
     )
 
     # Update Supabase task if exists
-    try:
-        supabase = create_client(
-            os.environ['SUPABASE_URL'],
-            os.environ['SUPABASE_SERVICE_KEY']
-        )
-        supabase.table('colorpicker_tasks').update({
-            'status': 'completed',
-            's3_key': s3_key,
-            'file_size_bytes': len(image_bytes),
-            'completed_at': datetime.now(timezone.utc).isoformat(),
-        }).eq('model', model).eq('primary_color', primary).eq('accent_color', accent).eq('led_color', leds).execute()
-    except Exception as e:
-        print(f"Warning: Could not update Supabase task: {e}")
+    if supabase:
+        try:
+            supabase.table('colorpicker_tasks').update({
+                'status': 'completed',
+                's3_key': s3_key,
+                'file_size_bytes': len(image_bytes),
+                'completed_at': datetime.now(timezone.utc).isoformat(),
+            }).eq('model', model).eq('primary_color', primary).eq('accent_color', accent).eq('led_color', leds).execute()
+        except Exception as e:
+            print(f"Warning: Could not update Supabase task: {e}")
+
+    # Mark progress complete
+    complete_progress(True, url=result_url)
 
     return {
         "success": True,
         "exists": False,
-        "url": f"https://{bucket}.s3.us-east-1.amazonaws.com/{s3_key}",
+        "url": result_url,
+        "session_id": session_id,
         "size_bytes": len(image_bytes),
         "duration_ms": int((time.time() - start) * 1000),
     }

@@ -90,6 +90,11 @@ function HomeContent() {
   const [generationStatus, setGenerationStatus] = useState<string | null>(null);
   const [useGeneratedMode, setUseGeneratedMode] = useState(false);
 
+  // Progress tracking state
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [progressStep, setProgressStep] = useState<string>("");
+  const [progressPercent, setProgressPercent] = useState<number>(0);
+
   // Update URL when state changes
   const updateUrl = useCallback((tab: Tab, model?: string | null, colors?: { face?: string; accent?: string; led?: string }) => {
     const params = new URLSearchParams();
@@ -368,40 +373,94 @@ function HomeContent() {
     }
   }, [selectedScoreboard, faceColor, accentColor, ledColor, useGeneratedMode]);
 
+  // Poll for generation progress
+  const pollProgress = useCallback(async (sid: string) => {
+    try {
+      const response = await fetch(`/api/colorpicker/progress?session_id=${sid}`);
+      const data = await response.json();
+
+      setProgressStep(data.current_step || "Processing...");
+      setProgressPercent(data.progress_percent || 0);
+
+      if (data.status === "completed" && data.result_url) {
+        setGeneratedImageUrl(data.result_url + "?t=" + Date.now());
+        setGenerationStatus("ready");
+        setGenerating(false);
+        setMessage({
+          type: "success",
+          text: "Image generated successfully!"
+        });
+        return true; // Stop polling
+      } else if (data.status === "error") {
+        setGenerationStatus("error");
+        setGenerating(false);
+        setMessage({ type: "error", text: data.error_message || "Generation failed" });
+        return true; // Stop polling
+      }
+
+      return false; // Continue polling
+    } catch (error) {
+      console.error("Error polling progress:", error);
+      return false;
+    }
+  }, []);
+
   // Generate image instantly via Modal
   const handleGenerate = async () => {
     if (!selectedScoreboard) return;
 
+    // Generate unique session ID for progress tracking
+    const newSessionId = crypto.randomUUID();
+    setSessionId(newSessionId);
     setGenerating(true);
     setGenerationStatus("generating");
+    setProgressStep("Starting...");
+    setProgressPercent(0);
     setMessage(null);
 
-    try {
-      const response = await fetch("/api/colorpicker/generate-now", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: selectedScoreboard.model_name,
-          primary: faceColor,
-          accent: accentColor,
-          led: ledColor,
-        }),
-      });
+    // Start the generation request
+    const generatePromise = fetch("/api/colorpicker/generate-now", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: selectedScoreboard.model_name,
+        primary: faceColor,
+        accent: accentColor,
+        led: ledColor,
+        session_id: newSessionId,
+      }),
+    });
 
+    // Start polling for progress (with a small delay to let the request reach Modal)
+    const pollInterval = setInterval(async () => {
+      const done = await pollProgress(newSessionId);
+      if (done) {
+        clearInterval(pollInterval);
+      }
+    }, 500); // Poll every 500ms
+
+    try {
+      const response = await generatePromise;
       const data = await response.json();
+
+      // Clear polling since we got the final response
+      clearInterval(pollInterval);
 
       if (data.success && data.url) {
         setGeneratedImageUrl(data.url + "?t=" + Date.now()); // Cache bust
         setGenerationStatus("ready");
+        setProgressStep("Complete!");
+        setProgressPercent(100);
         setMessage({
           type: "success",
-          text: data.exists ? "Image loaded!" : `Generated in ${data.duration_ms}ms`
+          text: data.exists ? "Image loaded from cache!" : `Generated in ${data.duration_ms}ms`
         });
       } else {
         setGenerationStatus("error");
         setMessage({ type: "error", text: data.error || "Generation failed" });
       }
     } catch (error) {
+      clearInterval(pollInterval);
       setGenerationStatus("error");
       setMessage({
         type: "error",
@@ -702,13 +761,60 @@ function HomeContent() {
                       ) : (
                         <div className="w-full max-w-2xl aspect-[16/9] bg-gray-100 rounded-lg flex flex-col items-center justify-center text-gray-500">
                           {generationStatus === "generating" ? (
-                            <>
-                              <div className="w-16 h-16 mb-4 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                              <p className="text-lg font-medium mb-2">Generating Image...</p>
-                              <p className="text-sm text-center max-w-md">
-                                This may take a few seconds
+                            <div className="w-full max-w-md px-8">
+                              {/* Progress circle */}
+                              <div className="flex justify-center mb-6">
+                                <div className="relative w-24 h-24">
+                                  <svg className="w-24 h-24 transform -rotate-90">
+                                    <circle
+                                      cx="48"
+                                      cy="48"
+                                      r="40"
+                                      fill="none"
+                                      stroke="#e5e7eb"
+                                      strokeWidth="8"
+                                    />
+                                    <circle
+                                      cx="48"
+                                      cy="48"
+                                      r="40"
+                                      fill="none"
+                                      stroke="#3b82f6"
+                                      strokeWidth="8"
+                                      strokeLinecap="round"
+                                      strokeDasharray={`${2 * Math.PI * 40}`}
+                                      strokeDashoffset={`${2 * Math.PI * 40 * (1 - progressPercent / 100)}`}
+                                      className="transition-all duration-300"
+                                    />
+                                  </svg>
+                                  <div className="absolute inset-0 flex items-center justify-center">
+                                    <span className="text-xl font-bold text-blue-600">{progressPercent}%</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Current step */}
+                              <p className="text-lg font-medium text-gray-800 text-center mb-4">
+                                {progressStep || "Initializing..."}
                               </p>
-                            </>
+
+                              {/* Progress bar */}
+                              <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
+                                <div
+                                  className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                                  style={{ width: `${progressPercent}%` }}
+                                />
+                              </div>
+
+                              {/* Step indicators */}
+                              <div className="flex justify-between text-xs text-gray-500 mb-2">
+                                <span className={progressPercent >= 10 ? "text-blue-600 font-medium" : ""}>Cache</span>
+                                <span className={progressPercent >= 30 ? "text-blue-600 font-medium" : ""}>Masks</span>
+                                <span className={progressPercent >= 50 ? "text-blue-600 font-medium" : ""}>Colors</span>
+                                <span className={progressPercent >= 75 ? "text-blue-600 font-medium" : ""}>Merge</span>
+                                <span className={progressPercent >= 90 ? "text-blue-600 font-medium" : ""}>Upload</span>
+                              </div>
+                            </div>
                           ) : (
                             <>
                               <svg className="w-16 h-16 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
