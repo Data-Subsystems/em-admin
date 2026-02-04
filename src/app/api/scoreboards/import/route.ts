@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 
 const COLORS_URL = "https://www.electro-mech.com/wp-content/uploads/manuals/scoreboard-colors.txt";
-const S3_BUCKET_URL = process.env.S3_BUCKET_URL || "https://em-scoreboard-images.s3.us-east-1.amazonaws.com";
+const S3_BUCKET_URL = process.env.S3_BUCKET_URL || "https://em-admin-assets.s3.us-east-1.amazonaws.com";
 
 interface ColorEntry {
   name: string;
