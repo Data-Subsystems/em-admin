@@ -3,8 +3,17 @@
 import { useState, useEffect, useCallback } from "react";
 import { ScoreboardModel, COLOR_PALETTE, LED_COLORS } from "@/lib/supabase";
 
-type Tab = "scoreboards" | "customizer" | "analysis";
+type Tab = "viewer" | "scoreboards" | "customizer" | "analysis";
 type ColorTab = "face" | "accent" | "led";
+
+interface S3Image {
+  key: string;
+  filename: string;
+  modelName: string;
+  url: string;
+  size: number;
+  lastModified: string;
+}
 
 interface StatusCounts {
   pending?: number;
@@ -44,7 +53,7 @@ const COLOR_DISPLAY_NAMES: Record<string, string> = {
 };
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<Tab>("scoreboards");
+  const [activeTab, setActiveTab] = useState<Tab>("viewer");
   const [scoreboards, setScoreboards] = useState<ScoreboardModel[]>([]);
   const [selectedScoreboard, setSelectedScoreboard] = useState<ScoreboardModel | null>(null);
   const [loading, setLoading] = useState(false);
@@ -53,6 +62,12 @@ export default function Home() {
   const [statusCounts, setStatusCounts] = useState<StatusCounts>({});
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
+  // S3 Images state
+  const [s3Images, setS3Images] = useState<S3Image[]>([]);
+  const [s3Loading, setS3Loading] = useState(false);
+  const [selectedS3Image, setSelectedS3Image] = useState<S3Image | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+
   // Customization state
   const [colorTab, setColorTab] = useState<ColorTab>("face");
   const [faceColor, setFaceColor] = useState<string>("indigo_purple");
@@ -60,6 +75,21 @@ export default function Home() {
   const [ledColor, setLedColor] = useState<string>("red");
   const [newSelection, setNewSelection] = useState<string | null>(null);
   const [upgradeETN, setUpgradeETN] = useState(false);
+
+  // Fetch S3 images
+  const fetchS3Images = useCallback(async () => {
+    setS3Loading(true);
+    try {
+      const response = await fetch("/api/images");
+      const data = await response.json();
+      if (data.images) {
+        setS3Images(data.images);
+      }
+    } catch (error) {
+      console.error("Error fetching S3 images:", error);
+    }
+    setS3Loading(false);
+  }, []);
 
   // Fetch scoreboards
   const fetchScoreboards = useCallback(async () => {
@@ -169,9 +199,15 @@ export default function Home() {
   };
 
   useEffect(() => {
+    fetchS3Images();
     fetchScoreboards();
     fetchAnalysisStatus();
-  }, [fetchScoreboards, fetchAnalysisStatus]);
+  }, [fetchS3Images, fetchScoreboards, fetchAnalysisStatus]);
+
+  // Filter S3 images based on search
+  const filteredS3Images = s3Images.filter((img) =>
+    img.modelName.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   // Get current color for display
   const getCurrentColor = () => {
@@ -187,6 +223,7 @@ export default function Home() {
         <div className="border-b border-gray-200 bg-white rounded-t-lg">
           <nav className="flex">
             {[
+              { id: "viewer", label: "Scoreboard Viewer" },
               { id: "scoreboards", label: "Scoreboards Library" },
               { id: "customizer", label: "Customizer" },
               { id: "analysis", label: "Analysis Status" },
@@ -230,6 +267,119 @@ export default function Home() {
 
       {/* Content */}
       <main className="max-w-7xl mx-auto px-4 py-6">
+        {/* Scoreboard Viewer Tab */}
+        {activeTab === "viewer" && (
+          <div className="bg-white rounded-lg shadow">
+            {/* Search and Stats */}
+            <div className="p-4 border-b flex items-center justify-between gap-4">
+              <div className="flex-1 max-w-md">
+                <input
+                  type="text"
+                  placeholder="Search scoreboards..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#8B3A3A]"
+                />
+              </div>
+              <div className="text-gray-600">
+                {s3Loading ? "Loading..." : `${filteredS3Images.length} of ${s3Images.length} images`}
+              </div>
+            </div>
+
+            {/* Two-column layout */}
+            <div className="flex">
+              {/* Image Grid */}
+              <div className="flex-1 p-4 border-r overflow-auto" style={{ maxHeight: "calc(100vh - 200px)" }}>
+                {s3Loading ? (
+                  <div className="text-center py-8">Loading images from S3...</div>
+                ) : filteredS3Images.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    {searchQuery ? "No matching scoreboards found" : "No images found in S3"}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                    {filteredS3Images.map((img) => (
+                      <div
+                        key={img.key}
+                        onClick={() => setSelectedS3Image(img)}
+                        className={`cursor-pointer rounded border overflow-hidden transition hover:shadow-lg ${
+                          selectedS3Image?.key === img.key ? "ring-2 ring-[#8B3A3A]" : ""
+                        }`}
+                      >
+                        <div className="aspect-video bg-gray-100">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={img.url}
+                            alt={img.modelName}
+                            className="w-full h-full object-contain"
+                            loading="lazy"
+                          />
+                        </div>
+                        <div className="p-2 bg-white">
+                          <div className="font-medium text-sm text-center">{img.modelName.toUpperCase()}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Preview Panel */}
+              <div className="w-96 p-4 bg-gray-50" style={{ maxHeight: "calc(100vh - 200px)" }}>
+                {selectedS3Image ? (
+                  <div>
+                    <h3 className="text-xl font-semibold text-[#8B3A3A] mb-4">
+                      {selectedS3Image.modelName.toUpperCase()}
+                    </h3>
+                    <div className="bg-white rounded-lg border overflow-hidden mb-4">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={selectedS3Image.url}
+                        alt={selectedS3Image.modelName}
+                        className="w-full h-auto"
+                      />
+                    </div>
+                    <div className="space-y-2 text-sm">
+                      <div>
+                        <span className="font-medium">Filename:</span>{" "}
+                        <span className="text-gray-600">{selectedS3Image.filename}</span>
+                      </div>
+                      <div>
+                        <span className="font-medium">Size:</span>{" "}
+                        <span className="text-gray-600">{(selectedS3Image.size / 1024).toFixed(1)} KB</span>
+                      </div>
+                      <div>
+                        <span className="font-medium">S3 URL:</span>{" "}
+                        <a
+                          href={selectedS3Image.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:underline break-all"
+                        >
+                          Open in new tab
+                        </a>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(selectedS3Image.url);
+                        setMessage({ type: "success", text: "S3 URL copied to clipboard!" });
+                      }}
+                      className="mt-4 w-full px-4 py-2 bg-[#8B3A3A] text-white rounded hover:bg-[#6B2A2A] transition"
+                    >
+                      Copy S3 URL
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-center text-gray-500 py-8">
+                    Select an image to preview
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Scoreboards Tab */}
         {activeTab === "scoreboards" && (
           <div className="bg-white rounded-lg shadow p-6">
