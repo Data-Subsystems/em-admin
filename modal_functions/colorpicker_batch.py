@@ -908,11 +908,17 @@ def run_batch_processing(
 
             print(f"\n[Iteration {iteration}] Processing {len(tasks)} tasks...")
 
-            # Update batch_id for these tasks
+            # Update batch_id for these tasks (in chunks to avoid URL length limits)
             task_ids = [t['id'] for t in tasks]
-            supabase.table('colorpicker_tasks').update({
-                'batch_id': batch_id
-            }).in_('id', task_ids).execute()
+            chunk_size = 100  # Supabase IN clause limit
+            for i in range(0, len(task_ids), chunk_size):
+                chunk = task_ids[i:i + chunk_size]
+                try:
+                    supabase.table('colorpicker_tasks').update({
+                        'batch_id': batch_id
+                    }).in_('id', chunk).execute()
+                except Exception as e:
+                    print(f"Warning: Could not update batch_id for chunk: {e}")
 
             # Split into batches for parallel processing
             batches = [
