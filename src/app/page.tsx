@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { ScoreboardModel, COLOR_PALETTE, LED_COLORS } from "@/lib/supabase";
+import ColorizedScoreboard from "@/components/ColorizedScoreboard";
 
 type Tab = "scoreboards" | "customizer" | "analysis";
 type ColorTab = "face" | "accent" | "led";
@@ -386,32 +387,14 @@ export default function Home() {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                   {/* Scoreboard Preview */}
                   <div className="lg:col-span-2 bg-white rounded-xl shadow-sm p-6">
-                    {/* Preview with color overlay */}
-                    <div
-                      className="relative rounded-lg overflow-hidden transition-all duration-300"
-                      style={{
-                        backgroundColor: COLOR_PALETTE[faceColor] || "#1a1a2e",
-                        border: accentColor !== "none" ? `8px solid ${COLOR_PALETTE[accentColor]}` : "8px solid transparent",
-                        boxShadow: `inset 0 0 100px ${LED_COLORS[ledColor]}40, 0 4px 20px rgba(0,0,0,0.3)`
-                      }}
-                    >
-                      <div className="p-6 flex items-center justify-center min-h-[300px]">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={getImageUrl(selectedScoreboard.image_filename)}
-                          alt={selectedScoreboard.model_name}
-                          className="max-w-full max-h-[350px] object-contain relative z-10"
-                          style={{
-                            filter: "drop-shadow(0 4px 8px rgba(0,0,0,0.3))",
-                          }}
-                        />
-                      </div>
-                      {/* LED Glow Effect */}
-                      <div
-                        className="absolute inset-0 pointer-events-none transition-all duration-300"
-                        style={{
-                          background: `radial-gradient(ellipse at center, ${LED_COLORS[ledColor]}30 0%, transparent 60%)`,
-                        }}
+                    {/* Canvas-based colorized preview */}
+                    <div className="bg-gray-900 rounded-lg p-6 min-h-[350px] flex items-center justify-center">
+                      <ColorizedScoreboard
+                        imageUrl={getImageUrl(selectedScoreboard.image_filename)}
+                        faceColor={COLOR_PALETTE[faceColor] || "#1a1a2e"}
+                        accentColor={accentColor !== "none" ? COLOR_PALETTE[accentColor] : null}
+                        ledColor={LED_COLORS[ledColor] || "#ff0000"}
+                        className="max-h-[350px]"
                       />
                     </div>
 
