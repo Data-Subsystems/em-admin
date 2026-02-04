@@ -4,12 +4,13 @@ import type { NextRequest } from "next/server";
 const SITE_PASSWORD = process.env.SITE_PASSWORD || "emadmin2026!";
 const COOKIE_NAME = "em-admin-auth";
 
-export function middleware(request: NextRequest) {
-  // Skip auth for API routes and static files
+export async function middleware(request: NextRequest) {
+  // Skip auth for API routes, static files, and login endpoint
   if (
     request.nextUrl.pathname.startsWith("/api/") ||
     request.nextUrl.pathname.startsWith("/_next/") ||
-    request.nextUrl.pathname.startsWith("/favicon")
+    request.nextUrl.pathname.startsWith("/favicon") ||
+    request.nextUrl.pathname === "/login"
   ) {
     return NextResponse.next();
   }
@@ -18,19 +19,6 @@ export function middleware(request: NextRequest) {
   const authCookie = request.cookies.get(COOKIE_NAME);
   if (authCookie?.value === "authenticated") {
     return NextResponse.next();
-  }
-
-  // Check for password in query param (login attempt)
-  const password = request.nextUrl.searchParams.get("password");
-  if (password === SITE_PASSWORD) {
-    const response = NextResponse.redirect(new URL("/", request.url));
-    response.cookies.set(COOKIE_NAME, "authenticated", {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 7, // 7 days
-    });
-    return response;
   }
 
   // Show login page
@@ -95,20 +83,37 @@ export function middleware(request: NextRequest) {
     .error {
       color: #dc2626;
       font-size: 0.875rem;
-      display: ${password ? "block" : "none"};
+      display: none;
     }
+    .error.show { display: block; }
   </style>
 </head>
 <body>
   <div class="login-box">
     <h1>EM Admin</h1>
     <p>Enter password to access the scoreboard tool</p>
-    <form method="GET">
-      <input type="password" name="password" placeholder="Password" required autofocus>
+    <form id="loginForm">
+      <input type="password" id="password" placeholder="Password" required autofocus>
       <button type="submit">Login</button>
-      <div class="error">Invalid password</div>
+      <div class="error" id="error">Invalid password</div>
     </form>
   </div>
+  <script>
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const password = document.getElementById('password').value;
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
+      if (res.ok) {
+        window.location.href = '/';
+      } else {
+        document.getElementById('error').classList.add('show');
+      }
+    });
+  </script>
 </body>
 </html>`,
     {
