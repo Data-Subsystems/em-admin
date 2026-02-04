@@ -1,5 +1,7 @@
+-- EM Scoreboard Customizer tables (prefix: em_)
+
 -- Scoreboard models table
-CREATE TABLE IF NOT EXISTS scoreboard_models (
+CREATE TABLE IF NOT EXISTS em_scoreboard_models (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     model_name TEXT NOT NULL UNIQUE,  -- e.g., "lx1020"
     image_filename TEXT NOT NULL,      -- e.g., "lx1020.png"
@@ -28,13 +30,13 @@ CREATE TABLE IF NOT EXISTS scoreboard_models (
 );
 
 -- Index for quick lookups
-CREATE INDEX IF NOT EXISTS idx_scoreboard_models_model_name ON scoreboard_models(model_name);
-CREATE INDEX IF NOT EXISTS idx_scoreboard_models_sport_type ON scoreboard_models(sport_type);
-CREATE INDEX IF NOT EXISTS idx_scoreboard_models_layout_type ON scoreboard_models(layout_type);
-CREATE INDEX IF NOT EXISTS idx_scoreboard_models_analysis_status ON scoreboard_models(analysis_status);
+CREATE INDEX IF NOT EXISTS idx_em_scoreboard_models_model_name ON em_scoreboard_models(model_name);
+CREATE INDEX IF NOT EXISTS idx_em_scoreboard_models_sport_type ON em_scoreboard_models(sport_type);
+CREATE INDEX IF NOT EXISTS idx_em_scoreboard_models_layout_type ON em_scoreboard_models(layout_type);
+CREATE INDEX IF NOT EXISTS idx_em_scoreboard_models_analysis_status ON em_scoreboard_models(analysis_status);
 
 -- Analysis jobs table for tracking batch processing
-CREATE TABLE IF NOT EXISTS analysis_jobs (
+CREATE TABLE IF NOT EXISTS em_analysis_jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     status TEXT DEFAULT 'pending',     -- pending, running, completed, failed
     total_images INTEGER DEFAULT 0,
@@ -47,10 +49,10 @@ CREATE TABLE IF NOT EXISTS analysis_jobs (
 );
 
 -- Custom scoreboard configurations (user-created)
-CREATE TABLE IF NOT EXISTS custom_configurations (
+CREATE TABLE IF NOT EXISTS em_custom_configurations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
-    base_model_id UUID REFERENCES scoreboard_models(id),
+    base_model_id UUID REFERENCES em_scoreboard_models(id),
 
     -- Custom color selections
     face_color TEXT,                   -- Color key (e.g., "navy_blue")
@@ -74,7 +76,7 @@ CREATE TABLE IF NOT EXISTS custom_configurations (
 );
 
 -- Function to update updated_at timestamp
-CREATE OR REPLACE FUNCTION update_updated_at_column()
+CREATE OR REPLACE FUNCTION em_update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
     NEW.updated_at = NOW();
@@ -83,14 +85,14 @@ END;
 $$ language 'plpgsql';
 
 -- Triggers for updated_at
-DROP TRIGGER IF EXISTS update_scoreboard_models_updated_at ON scoreboard_models;
-CREATE TRIGGER update_scoreboard_models_updated_at
-    BEFORE UPDATE ON scoreboard_models
+DROP TRIGGER IF EXISTS update_em_scoreboard_models_updated_at ON em_scoreboard_models;
+CREATE TRIGGER update_em_scoreboard_models_updated_at
+    BEFORE UPDATE ON em_scoreboard_models
     FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
+    EXECUTE FUNCTION em_update_updated_at_column();
 
-DROP TRIGGER IF EXISTS update_custom_configurations_updated_at ON custom_configurations;
-CREATE TRIGGER update_custom_configurations_updated_at
-    BEFORE UPDATE ON custom_configurations
+DROP TRIGGER IF EXISTS update_em_custom_configurations_updated_at ON em_custom_configurations;
+CREATE TRIGGER update_em_custom_configurations_updated_at
+    BEFORE UPDATE ON em_custom_configurations
     FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
+    EXECUTE FUNCTION em_update_updated_at_column();

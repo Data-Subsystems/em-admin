@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     const offset = parseInt(searchParams.get("offset") || "0");
 
     let query = supabaseAdmin
-      .from("scoreboard_models")
+      .from("em_scoreboard_models")
       .select("*", { count: "exact" })
       .order("model_name", { ascending: true })
       .range(offset, offset + limit - 1);

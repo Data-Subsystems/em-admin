@@ -12,7 +12,7 @@ export async function POST(
 
     // Get the scoreboard record
     const { data: scoreboard, error: fetchError } = await supabaseAdmin
-      .from("scoreboard_models")
+      .from("em_scoreboard_models")
       .select("*")
       .eq("id", id)
       .single();
@@ -26,7 +26,7 @@ export async function POST(
 
     // Update status to processing
     await supabaseAdmin
-      .from("scoreboard_models")
+      .from("em_scoreboard_models")
       .update({ analysis_status: "processing" })
       .eq("id", id);
 
@@ -42,7 +42,7 @@ export async function POST(
 
       // Update with analysis results
       const { data: updated, error: updateError } = await supabaseAdmin
-        .from("scoreboard_models")
+        .from("em_scoreboard_models")
         .update({
           sport_type: analysis.sport_type,
           dimensions: analysis.dimensions,
@@ -69,7 +69,7 @@ export async function POST(
     } catch (analysisError) {
       // Update with error status
       await supabaseAdmin
-        .from("scoreboard_models")
+        .from("em_scoreboard_models")
         .update({
           analysis_status: "error",
           analysis_error:

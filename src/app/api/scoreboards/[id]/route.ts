@@ -10,7 +10,7 @@ export async function GET(
 
     // Try to find by ID first, then by model_name
     let query = supabaseAdmin
-      .from("scoreboard_models")
+      .from("em_scoreboard_models")
       .select("*");
 
     // Check if it looks like a UUID
@@ -50,7 +50,7 @@ export async function PATCH(
     const body = await request.json();
 
     const { data, error } = await supabaseAdmin
-      .from("scoreboard_models")
+      .from("em_scoreboard_models")
       .update(body)
       .eq("id", id)
       .select()

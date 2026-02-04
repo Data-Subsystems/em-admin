@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
 
     // Create a job record
     const { data: job, error: jobError } = await supabaseAdmin
-      .from("analysis_jobs")
+      .from("em_analysis_jobs")
       .insert({
         status: "running",
         started_at: new Date().toISOString(),
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
 
     // Get scoreboards to analyze
     let query = supabaseAdmin
-      .from("scoreboard_models")
+      .from("em_scoreboard_models")
       .select("*")
       .limit(limit);
 
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
 
     if (fetchError) {
       await supabaseAdmin
-        .from("analysis_jobs")
+        .from("em_analysis_jobs")
         .update({ status: "failed", error_message: fetchError.message })
         .eq("id", job.id);
       return NextResponse.json({ error: fetchError.message }, { status: 500 });
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
 
     if (!scoreboards || scoreboards.length === 0) {
       await supabaseAdmin
-        .from("analysis_jobs")
+        .from("em_analysis_jobs")
         .update({
           status: "completed",
           completed_at: new Date().toISOString(),
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
 
     // Update job with total count
     await supabaseAdmin
-      .from("analysis_jobs")
+      .from("em_analysis_jobs")
       .update({ total_images: scoreboards.length })
       .eq("id", job.id);
 
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
       try {
         // Update status to processing
         await supabaseAdmin
-          .from("scoreboard_models")
+          .from("em_scoreboard_models")
           .update({ analysis_status: "processing" })
           .eq("id", scoreboard.id);
 
@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
 
         // Update with analysis results
         await supabaseAdmin
-          .from("scoreboard_models")
+          .from("em_scoreboard_models")
           .update({
             sport_type: analysis.sport_type,
             dimensions: analysis.dimensions,
@@ -111,7 +111,7 @@ export async function POST(request: NextRequest) {
 
         // Update job progress
         await supabaseAdmin
-          .from("analysis_jobs")
+          .from("em_analysis_jobs")
           .update({ processed_images: processedCount, error_count: errorCount })
           .eq("id", job.id);
 
@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
         const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
         await supabaseAdmin
-          .from("scoreboard_models")
+          .from("em_scoreboard_models")
           .update({
             analysis_status: "error",
             analysis_error: errorMessage,
@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
 
         // Update job progress
         await supabaseAdmin
-          .from("analysis_jobs")
+          .from("em_analysis_jobs")
           .update({ processed_images: processedCount, error_count: errorCount })
           .eq("id", job.id);
       }
@@ -145,7 +145,7 @@ export async function POST(request: NextRequest) {
 
     // Mark job as completed
     await supabaseAdmin
-      .from("analysis_jobs")
+      .from("em_analysis_jobs")
       .update({
         status: "completed",
         completed_at: new Date().toISOString(),
@@ -173,7 +173,7 @@ export async function GET() {
   try {
     // Get the latest job status
     const { data: jobs, error } = await supabaseAdmin
-      .from("analysis_jobs")
+      .from("em_analysis_jobs")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(10);
@@ -184,7 +184,7 @@ export async function GET() {
 
     // Get analysis status counts
     const { data: statusCounts, error: countError } = await supabaseAdmin
-      .from("scoreboard_models")
+      .from("em_scoreboard_models")
       .select("analysis_status")
       .then((result) => {
         if (result.error) return result;

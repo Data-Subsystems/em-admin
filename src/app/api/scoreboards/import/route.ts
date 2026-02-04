@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
 
     // Upsert records (update if exists, insert if not)
     const { data, error } = await supabaseAdmin
-      .from("scoreboard_models")
+      .from("em_scoreboard_models")
       .upsert(records, {
         onConflict: "model_name",
         ignoreDuplicates: false,
