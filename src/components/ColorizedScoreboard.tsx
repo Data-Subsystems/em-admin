@@ -160,7 +160,8 @@ export default function ColorizedScoreboard({
       setLoading(false);
     };
 
-    img.src = imageUrl;
+    // Add cache-busting to ensure CORS headers are fetched fresh
+    img.src = `${imageUrl}${imageUrl.includes('?') ? '&' : '?'}cors=1`;
   }, [imageUrl]);
 
   // Apply color replacement when colors change
