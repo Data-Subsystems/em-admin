@@ -172,12 +172,10 @@ export default function ColorizedScoreboard({
       }
 
       // 2. LED pixels (warm red/amber colors) - include antialiasing pixels
-      // More inclusive detection to catch edge glow pixels too
       const isWarmHue = h < 0.15 || h > 0.85;
       const isLedPixel = isWarmHue && r > g && r > b && r > 80 && (r - b > 20);
 
       if (isLedPixel && l > 0.12 && l < 0.90) {
-        // Shift hue to target LED color, preserve saturation and luminosity
         const newRgb = hslToRgb(targetLedHsl.h, Math.max(s, targetLedHsl.s * 0.5), l);
         data[i] = newRgb.r;
         data[i + 1] = newRgb.g;
@@ -185,47 +183,56 @@ export default function ColorizedScoreboard({
         continue;
       }
 
-      // 3. WHITE pixels (L > 95%) - check if it's a FRAME LINE or TEXT
-      // Frame lines detected from image analysis:
-      // - Outer horizontal: Y=6-10 (top), Y=280-284 (bottom section)
-      // - Inner section (BALL/STRIKE/OUT): Y=22-27 (top), Y=199-203 (bottom)
-      // - Vertical: X=66-69 (left), X=548-551 (right)
-      if (l > 0.95) {
-        // All horizontal frames span the full width between vertical frames
-        const isOuterHorizontalFrame =
-          ((y >= 6 && y <= 10) || (y >= 280 && y <= 284)) &&
-          (x >= 66 && x <= 551);
+      // 3. LIGHT pixels (L > 50%, S < 25%) - could be FRAME or TEXT
+      // Check frame position FIRST before assuming it's text
+      if (s < 0.25 && l > 0.50) {
+        // Frame positions (relative to image dimensions for flexibility)
+        const outerFrameThickness = Math.max(6, Math.round(width * 0.01));
 
-        // Inner horizontal frames also span full width to connect with vertical frames
+        // Outer perimeter (very edge of scoreboard)
+        const isOuterPerimeter =
+          x < outerFrameThickness ||
+          x >= width - outerFrameThickness ||
+          y < outerFrameThickness ||
+          y >= height - outerFrameThickness;
+
+        // Inner horizontal frame lines (BALL/STRIKE/OUT section borders)
+        // These run across the full width
+        const innerFrameTop1 = Math.round(height * 0.04);    // ~22 for 550px
+        const innerFrameTop2 = Math.round(height * 0.05);    // ~28 for 550px
+        const innerFrameBot1 = Math.round(height * 0.36);    // ~198 for 550px
+        const innerFrameBot2 = Math.round(height * 0.37);    // ~204 for 550px
+
         const isInnerHorizontalFrame =
-          ((y >= 22 && y <= 27) || (y >= 199 && y <= 203)) &&
-          (x >= 66 && x <= 551);
+          ((y >= innerFrameTop1 && y <= innerFrameTop2) ||
+           (y >= innerFrameBot1 && y <= innerFrameBot2));
 
-        // Vertical frames span the full height
+        // Vertical frame lines at left and right edges (inside outer perimeter)
+        const vertFrameLeft1 = Math.round(width * 0.11);     // ~64 for 579px
+        const vertFrameLeft2 = Math.round(width * 0.12);     // ~70 for 579px
+        const vertFrameRight1 = Math.round(width * 0.94);    // ~544 for 579px
+        const vertFrameRight2 = Math.round(width * 0.96);    // ~556 for 579px
+
         const isVerticalFrame =
-          ((x >= 66 && x <= 69) || (x >= 548 && x <= 551)) &&
-          (y >= 6 && y <= 284);
+          ((x >= vertFrameLeft1 && x <= vertFrameLeft2) ||
+           (x >= vertFrameRight1 && x <= vertFrameRight2)) &&
+          y > outerFrameThickness && y < height - outerFrameThickness;
 
-        const isFrameLine = isOuterHorizontalFrame || isInnerHorizontalFrame || isVerticalFrame;
+        const isFrameLine = isOuterPerimeter || isInnerHorizontalFrame || isVerticalFrame;
 
         if (isFrameLine && targetAccent) {
           data[i] = targetAccent.r;
           data[i + 1] = targetAccent.g;
           data[i + 2] = targetAccent.b;
         }
-        // else keep white as-is (text)
+        // else: it's text - keep unchanged
         continue;
       }
 
-      // 4. GRAY pixels (L > 60%, S < 15%) - TEXT, keep unchanged
-      if (s < 0.15 && l > 0.60) {
-        continue; // Don't touch text
-      }
-
-      // 5. COLORED/SATURATED pixels - check if OUTER PERIMETER (accent) or FACE
+      // 4. COLORED/SATURATED pixels - this is the FACE background
       if (s > 0.15) {
-        // Outer perimeter frame only - don't create frames that don't exist
-        const outerFrameThickness = 6;
+        // Check outer perimeter for accent color
+        const outerFrameThickness = Math.max(6, Math.round(width * 0.01));
         const isOuterPerimeter =
           x < outerFrameThickness ||
           x >= width - outerFrameThickness ||
