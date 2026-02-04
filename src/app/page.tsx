@@ -519,6 +519,12 @@ function HomeContent() {
             <span className="text-sm text-gray-400">
               {scoreboards.length} models loaded
             </span>
+            <a
+              href="/batch"
+              className="px-3 py-1.5 text-sm text-gray-300 hover:text-white hover:bg-white/10 rounded transition"
+            >
+              Batch Processing
+            </a>
             <button
               onClick={async () => {
                 await fetch("/api/auth/logout", { method: "POST" });
