@@ -365,61 +365,72 @@ class ImageGenerator:
             print(f"Error updating task status: {e}")
 
     @modal.method()
+    def process_single(self, task: dict) -> dict:
+        """
+        Process a SINGLE task - better for parallelization
+        Returns: {"success": bool, "error": str|None}
+        """
+        task_id = task['id']
+
+        try:
+            # Mark as processing
+            self.update_task_status(task_id, 'processing')
+
+            # Generate image
+            image_bytes = self.generate_image(
+                model=task['model'],
+                primary=task['primary_color'],
+                accent=task['accent_color'],
+                leds=task['led_color'],
+                width=task.get('width', 720),
+            )
+
+            if not image_bytes:
+                self.update_task_status(task_id, 'failed', error='No layers found for model')
+                return {"success": False, "error": "No layers"}
+
+            # Build S3 key
+            s3_key = f"colorpicker-generated/{task['model']}/{task['primary_color']}-{task['accent_color']}-{task['led_color']}.png"
+
+            # Upload to S3
+            self.s3.put_object(
+                Bucket=self.bucket,
+                Key=s3_key,
+                Body=image_bytes,
+                ContentType='image/png',
+                CacheControl='public, max-age=31536000, immutable',
+            )
+
+            # Update status
+            self.update_task_status(
+                task_id,
+                'completed',
+                s3_key=s3_key,
+                file_size=len(image_bytes),
+            )
+
+            return {"success": True, "error": None}
+
+        except Exception as e:
+            self.update_task_status(task_id, 'failed', error=str(e))
+            return {"success": False, "error": str(e)[:100]}
+
+    @modal.method()
     def process_batch(self, tasks: list[dict]) -> dict:
         """
-        Process a batch of tasks
+        Process a batch of tasks (legacy method for compatibility)
         Each task: {id, model, primary_color, accent_color, led_color, width}
         """
         results = {"success": 0, "failed": 0, "skipped": 0, "errors": []}
 
         for task in tasks:
-            task_id = task['id']
-
-            try:
-                # Mark as processing
-                self.update_task_status(task_id, 'processing')
-
-                # Generate image
-                image_bytes = self.generate_image(
-                    model=task['model'],
-                    primary=task['primary_color'],
-                    accent=task['accent_color'],
-                    leds=task['led_color'],
-                    width=task.get('width', 720),
-                )
-
-                if not image_bytes:
-                    self.update_task_status(task_id, 'failed', error='No layers found for model')
-                    results["failed"] += 1
-                    results["errors"].append(f"{task['model']}: No layers")
-                    continue
-
-                # Build S3 key
-                s3_key = f"colorpicker-generated/{task['model']}/{task['primary_color']}-{task['accent_color']}-{task['led_color']}.png"
-
-                # Upload to S3
-                self.s3.put_object(
-                    Bucket=self.bucket,
-                    Key=s3_key,
-                    Body=image_bytes,
-                    ContentType='image/png',
-                    CacheControl='public, max-age=31536000, immutable',
-                )
-
-                # Update status
-                self.update_task_status(
-                    task_id,
-                    'completed',
-                    s3_key=s3_key,
-                    file_size=len(image_bytes),
-                )
-
+            result = self.process_single.local(task)
+            if result["success"]:
                 results["success"] += 1
-
-            except Exception as e:
-                self.update_task_status(task_id, 'failed', error=str(e))
+            else:
                 results["failed"] += 1
-                results["errors"].append(f"{task.get('model', 'unknown')}: {str(e)[:100]}")
+                if result["error"]:
+                    results["errors"].append(f"{task.get('model', 'unknown')}: {result['error']}")
 
         return results
 
@@ -914,8 +925,9 @@ def run_batch_processing(
         while True:
             iteration += 1
 
-            # Fetch pending tasks
-            limit = batch_size * max_parallel
+            # Fetch pending tasks - fetch up to max_parallel tasks at once
+            # Each task will be processed by its own container
+            limit = max_parallel
             if max_tasks:
                 remaining = max_tasks - total_success - total_failed
                 if remaining <= 0:
@@ -946,24 +958,16 @@ def run_batch_processing(
                 except Exception as e:
                     print(f"Warning: Could not update batch_id for chunk: {e}")
 
-            # Split into batches for parallel processing
-            batches = [
-                tasks[i:i + batch_size]
-                for i in range(0, len(tasks), batch_size)
-            ]
+            print(f"Processing {len(tasks)} tasks in parallel...")
 
-            print(f"Split into {len(batches)} batches of ~{batch_size} each")
-
-            # Process in parallel using Modal's map
+            # Process individual tasks in parallel using Modal's map
+            # This allows maximum parallelization - each task gets its own container
             generator = ImageGenerator()
-            results = list(generator.process_batch.map(batches, order_outputs=False))
+            results = list(generator.process_single.map(tasks, order_outputs=False))
 
             # Aggregate results
-            batch_success = 0
-            batch_failed = 0
-            for r in results:
-                batch_success += r["success"]
-                batch_failed += r["failed"]
+            batch_success = sum(1 for r in results if r["success"])
+            batch_failed = sum(1 for r in results if not r["success"])
 
             total_success += batch_success
             total_failed += batch_failed
