@@ -282,8 +282,19 @@ export default function Home() {
               <p className="text-gray-400 text-xs">Scoreboard Configuration Tool</p>
             </div>
           </div>
-          <div className="text-sm text-gray-400">
-            {scoreboards.length} models loaded
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-gray-400">
+              {scoreboards.length} models loaded
+            </span>
+            <button
+              onClick={async () => {
+                await fetch("/api/auth/logout", { method: "POST" });
+                window.location.href = "/login";
+              }}
+              className="px-3 py-1.5 text-sm text-gray-300 hover:text-white hover:bg-white/10 rounded transition"
+            >
+              Logout
+            </button>
           </div>
         </div>
       </header>
