@@ -25,9 +25,10 @@ export async function GET(
       return NextResponse.json({ error: "Image not found" }, { status: 404 });
     }
 
-    const arrayBuffer = await response.Body.transformToByteArray();
+    const bytes = await response.Body.transformToByteArray();
+    const buffer = Buffer.from(bytes);
 
-    return new NextResponse(arrayBuffer, {
+    return new NextResponse(buffer, {
       headers: {
         "Content-Type": response.ContentType || "image/png",
         "Cache-Control": "public, max-age=31536000, immutable",
