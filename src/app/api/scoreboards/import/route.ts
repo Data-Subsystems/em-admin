@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import fs from "fs";
-import path from "path";
+
+const COLORS_URL = "https://www.electro-mech.com/wp-content/uploads/manuals/scoreboard-colors.txt";
+const S3_BUCKET_URL = process.env.S3_BUCKET_URL || "https://em-scoreboard-images.s3.us-east-1.amazonaws.com";
 
 interface ColorEntry {
   name: string;
@@ -12,42 +13,44 @@ interface ColorEntry {
 
 export async function POST(request: NextRequest) {
   try {
-    // Read the colors JSON file
-    const colorsPath = path.join(process.cwd(), "data", "scoreboard-colors.json");
-    const colorsData = fs.readFileSync(colorsPath, "utf-8");
-    const colors: ColorEntry[] = JSON.parse(colorsData);
+    // Fetch colors JSON from remote URL
+    const response = await fetch(COLORS_URL);
+    if (!response.ok) {
+      return NextResponse.json(
+        { error: `Failed to fetch colors: ${response.statusText}` },
+        { status: 500 }
+      );
+    }
 
-    // Get list of images in the scoreboard-images directory
-    const imagesDir = path.join(process.cwd(), "scoreboard-images");
-    const imageFiles = fs.readdirSync(imagesDir).filter((f) => f.endsWith(".png"));
+    const colors: ColorEntry[] = await response.json();
 
-    // Create a map of image filename to color config
-    const colorMap = new Map<string, ColorEntry>();
+    // Deduplicate by lowercase filename
+    const seenNames = new Set<string>();
+    const uniqueColors: ColorEntry[] = [];
+
     for (const entry of colors) {
-      // Normalize filename to lowercase for matching
-      const filename = entry.name.toLowerCase();
-      colorMap.set(filename, entry);
+      const lowerName = entry.name.toLowerCase();
+      if (!seenNames.has(lowerName)) {
+        seenNames.add(lowerName);
+        uniqueColors.push(entry);
+      }
     }
 
     // Prepare records for insertion
-    const records = imageFiles.map((filename) => {
+    const records = uniqueColors.map((entry) => {
       // Extract model name (remove .png extension)
-      const modelName = filename.replace(".png", "").toLowerCase();
-
-      // Find matching color config
-      const colorConfig = colorMap.get(filename.toLowerCase());
+      const filename = entry.name;
+      const modelName = filename.replace(/\.png$/i, "").toLowerCase();
 
       return {
         model_name: modelName,
-        image_filename: filename,
-        image_url: `/scoreboards/${filename}`,
-        color_config: colorConfig
-          ? {
-              "scoreboard-face": colorConfig["scoreboard-face"],
-              "accent-striping": colorConfig["accent-striping"],
-              "led-color": colorConfig["led-color"],
-            }
-          : null,
+        image_filename: filename.toLowerCase(),
+        image_url: `${S3_BUCKET_URL}/${filename.toLowerCase()}`,
+        color_config: {
+          "scoreboard-face": entry["scoreboard-face"],
+          "accent-striping": entry["accent-striping"],
+          "led-color": entry["led-color"],
+        },
         analysis_status: "pending",
       };
     });
@@ -66,32 +69,39 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Copy images to public folder for serving
-    const publicDir = path.join(process.cwd(), "public", "scoreboards");
-    if (!fs.existsSync(publicDir)) {
-      fs.mkdirSync(publicDir, { recursive: true });
-    }
-
-    let copiedCount = 0;
-    for (const filename of imageFiles) {
-      const src = path.join(imagesDir, filename);
-      const dest = path.join(publicDir, filename);
-      if (!fs.existsSync(dest)) {
-        fs.copyFileSync(src, dest);
-        copiedCount++;
-      }
-    }
-
     return NextResponse.json({
       success: true,
       imported: records.length,
-      withColorConfig: records.filter((r) => r.color_config).length,
-      imagesCopied: copiedCount,
+      s3_bucket: S3_BUCKET_URL,
     });
   } catch (error) {
     console.error("Import error:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Import failed" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function GET() {
+  try {
+    // Get count of scoreboards
+    const { count, error } = await supabaseAdmin
+      .from("em_scoreboard_models")
+      .select("*", { count: "exact", head: true });
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      total: count || 0,
+      colors_url: COLORS_URL,
+      s3_bucket: S3_BUCKET_URL,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to get status" },
       { status: 500 }
     );
   }
