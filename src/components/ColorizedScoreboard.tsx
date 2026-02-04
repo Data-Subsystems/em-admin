@@ -145,7 +145,51 @@ export default function ColorizedScoreboard({
     const targetLed = parseColor(ledColor);
     const targetLedHsl = rgbToHsl(targetLed.r, targetLed.g, targetLed.b);
 
-    // Step 1: Classify each pixel into layers
+    // Step 1: Find the dominant saturated color (this is the FACE color)
+    // This prevents red/orange faces from being detected as LEDs
+    const colorCounts = new Map<string, number>();
+
+    for (let i = 0; i < srcData.length; i += 4) {
+      const r = srcData[i];
+      const g = srcData[i + 1];
+      const b = srcData[i + 2];
+      const a = srcData[i + 3];
+
+      if (a < 10) continue;
+
+      const { s, l } = rgbToHsl(r, g, b);
+
+      // Only count saturated, non-black, non-white pixels
+      if (s > 0.20 && l > 0.15 && l < 0.85) {
+        // Quantize to reduce variations (group similar colors)
+        const qr = Math.round(r / 20) * 20;
+        const qg = Math.round(g / 20) * 20;
+        const qb = Math.round(b / 20) * 20;
+        const key = `${qr},${qg},${qb}`;
+        colorCounts.set(key, (colorCounts.get(key) || 0) + 1);
+      }
+    }
+
+    // Find the dominant face color
+    let dominantFaceColor = { r: 0, g: 0, b: 0 };
+    let maxCount = 0;
+    for (const [key, count] of colorCounts) {
+      if (count > maxCount) {
+        maxCount = count;
+        const [r, g, b] = key.split(',').map(Number);
+        dominantFaceColor = { r, g, b };
+      }
+    }
+
+    // Helper: Check if a color is similar to the dominant face color
+    const isSimilarToFace = (r: number, g: number, b: number): boolean => {
+      const tolerance = 60; // Allow some variation
+      return Math.abs(r - dominantFaceColor.r) < tolerance &&
+             Math.abs(g - dominantFaceColor.g) < tolerance &&
+             Math.abs(b - dominantFaceColor.b) < tolerance;
+    };
+
+    // Step 2: Classify each pixel into layers
     const layers = new Uint8Array(width * height); // 0=transparent, 1=black, 2=face, 3=striping, 4=label, 5=digit
 
     for (let i = 0; i < srcData.length; i += 4) {
@@ -170,26 +214,34 @@ export default function ColorizedScoreboard({
         continue;
       }
 
-      // 2. DIGIT - LED pixels (warm red/amber hue, red-dominant)
+      // 2. FACE - Check if similar to dominant face color FIRST
+      // This prevents red/orange faces from being misclassified as LEDs
+      if (isSimilarToFace(r, g, b)) {
+        layers[pixelIndex] = 2;
+        continue;
+      }
+
+      // 3. DIGIT - LED pixels (warm red/amber hue, red-dominant)
+      // Only if NOT similar to face color
       const isWarmHue = h < 0.15 || h > 0.85;
       if (isWarmHue && r > g && r > b && r > 80 && (r - b > 20) && l < 0.90) {
         layers[pixelIndex] = 5;
         continue;
       }
 
-      // 3. STRIPING - Pure white pixels (frame lines)
+      // 4. STRIPING - Pure white pixels (frame lines)
       if (r >= 250 && g >= 250 && b >= 250) {
         layers[pixelIndex] = 3;
         continue;
       }
 
-      // 4. LABEL - Gray/light desaturated pixels (text)
+      // 5. LABEL - Gray/light desaturated pixels (text)
       if (s < 0.15 && l > 0.50) {
         layers[pixelIndex] = 4;
         continue;
       }
 
-      // 5. FACE - Saturated colored pixels (background)
+      // 6. FACE - Any other saturated colored pixels
       if (s > 0.10) {
         layers[pixelIndex] = 2;
         continue;
