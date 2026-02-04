@@ -13,6 +13,8 @@ interface StatusCounts {
   error?: number;
 }
 
+const S3_BASE_URL = "https://em-admin-assets.s3.amazonaws.com/images";
+
 // Color names in display order (matching reference UI)
 const COLOR_ORDER = [
   "navy_blue", "egyptian_blue", "royal_blue", "icy_blue",
@@ -55,11 +57,15 @@ export default function Home() {
 
   // Customization state
   const [colorTab, setColorTab] = useState<ColorTab>("face");
-  const [faceColor, setFaceColor] = useState<string>("indigo_purple");
-  const [accentColor, setAccentColor] = useState<string>("white");
+  const [faceColor, setFaceColor] = useState<string>("matte_black");
+  const [accentColor, setAccentColor] = useState<string>("none");
   const [ledColor, setLedColor] = useState<string>("red");
-  const [newSelection, setNewSelection] = useState<string | null>(null);
   const [upgradeETN, setUpgradeETN] = useState(false);
+
+  // Get image URL
+  const getImageUrl = (filename: string) => {
+    return `${S3_BASE_URL}/${filename}`;
+  };
 
   // Fetch scoreboards
   const fetchScoreboards = useCallback(async () => {
@@ -158,7 +164,6 @@ export default function Home() {
 
   // Apply color selection
   const applyColorSelection = (color: string) => {
-    setNewSelection(color);
     if (colorTab === "face") {
       setFaceColor(color);
     } else if (colorTab === "accent") {
@@ -181,23 +186,41 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Tabs */}
-      <div className="max-w-7xl mx-auto px-4 mt-4">
-        <div className="border-b border-gray-200 bg-white rounded-t-lg">
-          <nav className="flex">
+    <div className="min-h-screen bg-gray-100">
+      {/* Header */}
+      <header className="bg-[#1a1a2e] text-white">
+        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-[#8B3A3A] rounded-lg flex items-center justify-center font-bold text-lg">
+              EM
+            </div>
+            <div>
+              <h1 className="text-xl font-semibold">Electro-Mech Admin</h1>
+              <p className="text-gray-400 text-xs">Scoreboard Configuration Tool</p>
+            </div>
+          </div>
+          <div className="text-sm text-gray-400">
+            {scoreboards.length} models loaded
+          </div>
+        </div>
+      </header>
+
+      {/* Navigation Tabs */}
+      <div className="bg-white border-b shadow-sm">
+        <div className="max-w-7xl mx-auto px-4">
+          <nav className="flex gap-1">
             {[
-              { id: "scoreboards", label: "Scoreboards Library" },
-              { id: "customizer", label: "Customizer" },
-              { id: "analysis", label: "Analysis Status" },
+              { id: "scoreboards", label: "Scoreboards Library", icon: "grid" },
+              { id: "customizer", label: "Customizer", icon: "palette" },
+              { id: "analysis", label: "Analysis", icon: "chart" },
             ].map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as Tab)}
-                className={`py-4 px-6 font-medium text-sm border-b-2 transition ${
+                className={`py-3 px-5 font-medium text-sm border-b-2 transition-colors ${
                   activeTab === tab.id
-                    ? "border-[#8B3A3A] text-[#8B3A3A] bg-white"
-                    : "border-transparent text-gray-500 hover:text-gray-700"
+                    ? "border-[#8B3A3A] text-[#8B3A3A]"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                 }`}
               >
                 {tab.label}
@@ -211,18 +234,18 @@ export default function Home() {
       {message && (
         <div className="max-w-7xl mx-auto px-4 mt-4">
           <div
-            className={`p-4 rounded ${
+            className={`p-4 rounded-lg flex items-center justify-between ${
               message.type === "success"
-                ? "bg-green-100 text-green-800 border border-green-200"
-                : "bg-red-100 text-red-800 border border-red-200"
+                ? "bg-green-50 text-green-800 border border-green-200"
+                : "bg-red-50 text-red-800 border border-red-200"
             }`}
           >
-            {message.text}
+            <span>{message.text}</span>
             <button
               onClick={() => setMessage(null)}
-              className="float-right font-bold"
+              className="text-lg font-bold hover:opacity-70"
             >
-              ×
+              x
             </button>
           </div>
         </div>
@@ -232,341 +255,314 @@ export default function Home() {
       <main className="max-w-7xl mx-auto px-4 py-6">
         {/* Scoreboards Tab */}
         {activeTab === "scoreboards" && (
-          <div className="bg-white rounded-lg shadow p-6">
-            {/* Actions */}
-            <div className="mb-6 flex gap-4 flex-wrap">
-              <button
-                onClick={handleImport}
-                disabled={importing}
-                className="px-4 py-2 bg-[#8B3A3A] text-white rounded hover:bg-[#6B2A2A] disabled:opacity-50 transition"
-              >
-                {importing ? "Importing..." : "Import from Files"}
-              </button>
-              <button
-                onClick={() => handleBatchAnalysis(10)}
-                disabled={analyzing}
-                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 transition"
-              >
-                {analyzing ? "Analyzing..." : "Analyze 10 Pending"}
-              </button>
-              <button
-                onClick={() => handleBatchAnalysis(50)}
-                disabled={analyzing}
-                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 transition"
-              >
-                {analyzing ? "Analyzing..." : "Analyze 50 Pending"}
-              </button>
-            </div>
+          <div className="space-y-6">
+            {/* Actions Bar */}
+            <div className="bg-white rounded-xl shadow-sm p-4 flex items-center justify-between flex-wrap gap-4">
+              <div className="flex gap-3">
+                <button
+                  onClick={handleImport}
+                  disabled={importing}
+                  className="px-4 py-2 bg-[#1a1a2e] text-white rounded-lg hover:bg-[#2a2a3e] disabled:opacity-50 transition font-medium text-sm"
+                >
+                  {importing ? "Importing..." : "Import from Files"}
+                </button>
+                <button
+                  onClick={() => handleBatchAnalysis(10)}
+                  disabled={analyzing}
+                  className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition font-medium text-sm"
+                >
+                  {analyzing ? "Analyzing..." : "Analyze 10"}
+                </button>
+                <button
+                  onClick={() => handleBatchAnalysis(50)}
+                  disabled={analyzing}
+                  className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition font-medium text-sm"
+                >
+                  Analyze 50
+                </button>
+              </div>
 
-            {/* Stats */}
-            <div className="mb-6 grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-gray-50 p-4 rounded border">
-                <div className="text-2xl font-bold">{scoreboards.length}</div>
-                <div className="text-gray-600 text-sm">Total Scoreboards</div>
-              </div>
-              <div className="bg-yellow-50 p-4 rounded border border-yellow-200">
-                <div className="text-2xl font-bold text-yellow-700">
-                  {statusCounts.pending || 0}
-                </div>
-                <div className="text-gray-600 text-sm">Pending Analysis</div>
-              </div>
-              <div className="bg-green-50 p-4 rounded border border-green-200">
-                <div className="text-2xl font-bold text-green-700">
-                  {statusCounts.completed || 0}
-                </div>
-                <div className="text-gray-600 text-sm">Completed</div>
-              </div>
-              <div className="bg-red-50 p-4 rounded border border-red-200">
-                <div className="text-2xl font-bold text-red-700">
-                  {statusCounts.error || 0}
-                </div>
-                <div className="text-gray-600 text-sm">Errors</div>
+              {/* Stats Pills */}
+              <div className="flex gap-2">
+                <span className="px-3 py-1 bg-gray-100 rounded-full text-sm">
+                  <span className="font-semibold">{scoreboards.length}</span> Total
+                </span>
+                <span className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-sm">
+                  <span className="font-semibold">{statusCounts.pending || 0}</span> Pending
+                </span>
+                <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm">
+                  <span className="font-semibold">{statusCounts.completed || 0}</span> Done
+                </span>
+                {(statusCounts.error || 0) > 0 && (
+                  <span className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm">
+                    <span className="font-semibold">{statusCounts.error}</span> Errors
+                  </span>
+                )}
               </div>
             </div>
 
             {/* Scoreboards Grid */}
-            {loading ? (
-              <div className="text-center py-8">Loading...</div>
-            ) : scoreboards.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
-                <p className="mb-4">No scoreboards imported yet.</p>
-                <p>Click &quot;Import from Files&quot; to load scoreboard images.</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {scoreboards.map((sb) => (
-                  <div
-                    key={sb.id}
-                    onClick={() => {
-                      setSelectedScoreboard(sb);
-                      setActiveTab("customizer");
-                    }}
-                    className={`bg-white rounded border overflow-hidden cursor-pointer hover:shadow-lg transition ${
-                      selectedScoreboard?.id === sb.id ? "ring-2 ring-[#8B3A3A]" : ""
-                    }`}
-                  >
-                    <div className="aspect-video bg-gray-100 relative">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={sb.image_url || `/scoreboards/${sb.image_filename}`}
-                        alt={sb.model_name}
-                        className="w-full h-full object-contain"
-                      />
-                      <span
-                        className={`absolute top-1 right-1 px-1.5 py-0.5 text-xs rounded ${
-                          sb.analysis_status === "completed"
-                            ? "bg-green-500 text-white"
-                            : sb.analysis_status === "error"
-                            ? "bg-red-500 text-white"
-                            : sb.analysis_status === "processing"
-                            ? "bg-yellow-500 text-white"
-                            : "bg-gray-400 text-white"
-                        }`}
-                      >
-                        {sb.analysis_status}
-                      </span>
+            <div className="bg-white rounded-xl shadow-sm p-6">
+              {loading ? (
+                <div className="text-center py-12 text-gray-500">Loading scoreboards...</div>
+              ) : scoreboards.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  <p className="mb-2">No scoreboards imported yet.</p>
+                  <p className="text-sm">Click &quot;Import from Files&quot; to load scoreboard images.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                  {scoreboards.map((sb) => (
+                    <div
+                      key={sb.id}
+                      onClick={() => {
+                        setSelectedScoreboard(sb);
+                        setActiveTab("customizer");
+                      }}
+                      className={`group bg-gray-50 rounded-lg overflow-hidden cursor-pointer transition hover:shadow-md hover:bg-gray-100 ${
+                        selectedScoreboard?.id === sb.id ? "ring-2 ring-[#8B3A3A]" : ""
+                      }`}
+                    >
+                      <div className="aspect-[4/3] bg-white p-2 relative">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={getImageUrl(sb.image_filename)}
+                          alt={sb.model_name}
+                          className="w-full h-full object-contain"
+                        />
+                        <span
+                          className={`absolute top-2 right-2 px-1.5 py-0.5 text-[10px] font-medium rounded ${
+                            sb.analysis_status === "completed"
+                              ? "bg-green-500 text-white"
+                              : sb.analysis_status === "error"
+                              ? "bg-red-500 text-white"
+                              : "bg-gray-300 text-gray-700"
+                          }`}
+                        >
+                          {sb.analysis_status === "completed" ? "Done" : sb.analysis_status === "error" ? "Error" : "Pending"}
+                        </span>
+                      </div>
+                      <div className="p-2 text-center">
+                        <div className="font-semibold text-sm text-gray-900">{sb.model_name.toUpperCase()}</div>
+                        {sb.sport_type && (
+                          <div className="text-xs text-gray-500 capitalize">{sb.sport_type}</div>
+                        )}
+                      </div>
                     </div>
-                    <div className="p-2">
-                      <div className="font-medium text-sm">{sb.model_name.toUpperCase()}</div>
-                      {sb.sport_type && (
-                        <div className="text-xs text-gray-500 capitalize">{sb.sport_type}</div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
-        {/* Customizer Tab - Matching Electro-Mech Style */}
+        {/* Customizer Tab */}
         {activeTab === "customizer" && (
-          <div className="bg-white rounded-lg shadow">
+          <div className="space-y-6">
             {selectedScoreboard ? (
               <>
-                {/* Model Title */}
-                <div className="border-b px-6 py-4">
-                  <h2 className="text-2xl font-semibold text-[#8B3A3A]">
-                    Model {selectedScoreboard.model_name.toUpperCase()} {selectedScoreboard.sport_type ? `${selectedScoreboard.sport_type.charAt(0).toUpperCase() + selectedScoreboard.sport_type.slice(1)} Scoreboard` : "Scoreboard"}
-                  </h2>
-                  {selectedScoreboard.features && selectedScoreboard.features.length > 0 && (
-                    <p className="text-gray-600 mt-2 text-sm">
-                      Features: {selectedScoreboard.features.join(", ")}
-                    </p>
-                  )}
+                {/* Model Header */}
+                <div className="bg-white rounded-xl shadow-sm p-6">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h2 className="text-2xl font-bold text-gray-900">
+                        Model {selectedScoreboard.model_name.toUpperCase()}
+                      </h2>
+                      <p className="text-gray-500 mt-1">
+                        {selectedScoreboard.sport_type
+                          ? `${selectedScoreboard.sport_type.charAt(0).toUpperCase() + selectedScoreboard.sport_type.slice(1)} Scoreboard`
+                          : "Multi-Sport Scoreboard"}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setActiveTab("scoreboards")}
+                      className="text-sm text-gray-500 hover:text-gray-700"
+                    >
+                      Change Model
+                    </button>
+                  </div>
                 </div>
 
-                <div className="p-6">
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    {/* Scoreboard Preview */}
-                    <div className="lg:col-span-2">
-                      <div
-                        className="relative rounded-lg overflow-hidden border-4 border-white shadow-lg"
-                        style={{ backgroundColor: COLOR_PALETTE[faceColor] || "#333" }}
-                      >
-                        {/* Accent stripe border effect */}
-                        <div
-                          className="absolute inset-0 border-8 pointer-events-none"
-                          style={{ borderColor: accentColor !== "none" ? COLOR_PALETTE[accentColor] : "transparent" }}
-                        />
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={`/scoreboards/${selectedScoreboard.image_filename}`}
-                          alt={selectedScoreboard.model_name}
-                          className="w-full h-auto relative z-10"
-                          style={{
-                            filter: `hue-rotate(0deg)`,
-                            mixBlendMode: "luminosity"
-                          }}
-                        />
-                        {/* Face color overlay */}
-                        <div
-                          className="absolute inset-0 z-20 mix-blend-multiply"
-                          style={{ backgroundColor: COLOR_PALETTE[faceColor] || "transparent" }}
-                        />
-                        {/* LED glow effect */}
-                        <div
-                          className="absolute inset-0 z-30 mix-blend-screen opacity-30 pointer-events-none"
-                          style={{
-                            background: `radial-gradient(ellipse at center, ${LED_COLORS[ledColor] || "transparent"} 0%, transparent 70%)`
-                          }}
-                        />
-                      </div>
-
-                      {/* ETN Upgrade Option */}
-                      <label className="flex items-center gap-2 mt-4 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={upgradeETN}
-                          onChange={(e) => setUpgradeETN(e.target.checked)}
-                          className="w-4 h-4 rounded border-gray-300"
-                        />
-                        <span className="text-gray-700">Upgrade to Electronic Team Names (ETNs)</span>
-                      </label>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  {/* Scoreboard Preview */}
+                  <div className="lg:col-span-2 bg-white rounded-xl shadow-sm p-6">
+                    <div className="bg-gray-900 rounded-lg p-8 flex items-center justify-center">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={getImageUrl(selectedScoreboard.image_filename)}
+                        alt={selectedScoreboard.model_name}
+                        className="max-w-full max-h-[400px] object-contain"
+                      />
                     </div>
 
-                    {/* Specs Panel */}
-                    <div>
-                      <div className="space-y-3 mb-6">
-                        <div>
-                          <span className="font-semibold">Dimensions:</span>{" "}
-                          <span className="text-gray-700">{selectedScoreboard.dimensions || "Contact for specs"}</span>
+                    {/* ETN Upgrade Option */}
+                    <label className="flex items-center gap-3 mt-4 p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition">
+                      <input
+                        type="checkbox"
+                        checked={upgradeETN}
+                        onChange={(e) => setUpgradeETN(e.target.checked)}
+                        className="w-5 h-5 rounded border-gray-300 text-[#8B3A3A] focus:ring-[#8B3A3A]"
+                      />
+                      <div>
+                        <span className="font-medium text-gray-900">Upgrade to Electronic Team Names (ETNs)</span>
+                        <p className="text-xs text-gray-500">Display team names digitally instead of vinyl lettering</p>
+                      </div>
+                    </label>
+                  </div>
+
+                  {/* Specs & Actions Panel */}
+                  <div className="space-y-6">
+                    {/* Specifications */}
+                    <div className="bg-white rounded-xl shadow-sm p-6">
+                      <h3 className="font-semibold text-gray-900 mb-4">Specifications</h3>
+                      <div className="space-y-3 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Dimensions</span>
+                          <span className="font-medium text-gray-900">{selectedScoreboard.dimensions || "Contact for specs"}</span>
                         </div>
-                        <div>
-                          <span className="font-semibold">Sport Type:</span>{" "}
-                          <span className="text-gray-700 capitalize">{selectedScoreboard.sport_type || "Multi-sport"}</span>
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Sport Type</span>
+                          <span className="font-medium text-gray-900 capitalize">{selectedScoreboard.sport_type || "Multi-sport"}</span>
                         </div>
-                        <div>
-                          <span className="font-semibold">Layout:</span>{" "}
-                          <span className="text-gray-700">{selectedScoreboard.layout_type?.replace(/_/g, " ") || "Standard"}</span>
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Layout</span>
+                          <span className="font-medium text-gray-900">{selectedScoreboard.layout_type?.replace(/_/g, " ") || "Standard"}</span>
                         </div>
-                        {selectedScoreboard.analysis_status === "completed" && selectedScoreboard.zones && (
-                          <div>
-                            <span className="font-semibold">Display Zones:</span>{" "}
-                            <span className="text-gray-700">{selectedScoreboard.zones.length}</span>
+                        {selectedScoreboard.zones && selectedScoreboard.zones.length > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Display Zones</span>
+                            <span className="font-medium text-gray-900">{selectedScoreboard.zones.length}</span>
                           </div>
                         )}
                       </div>
+                    </div>
 
-                      {/* Action Buttons */}
-                      <div className="flex gap-3 mb-6">
-                        <button className="flex-1 px-4 py-2 bg-[#C4A484] text-white rounded hover:bg-[#B4947A] transition font-medium">
-                          Request a Quote
-                        </button>
-                        <button className="flex-1 px-4 py-2 bg-[#C4A484] text-white rounded hover:bg-[#B4947A] transition font-medium flex items-center justify-center gap-2">
-                          <span>🖨</span> Print Scoreboard
-                        </button>
-                      </div>
-
-                      {/* Analyze Button for Pending */}
+                    {/* Actions */}
+                    <div className="bg-white rounded-xl shadow-sm p-6 space-y-3">
                       {selectedScoreboard.analysis_status === "pending" && (
                         <button
                           onClick={() => handleAnalyzeSingle(selectedScoreboard.id)}
                           disabled={analyzing}
-                          className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 transition mb-6"
+                          className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition font-medium"
                         >
-                          {analyzing ? "Analyzing with Nova Lite..." : "Analyze with AI"}
+                          {analyzing ? "Analyzing..." : "Analyze with AI"}
                         </button>
                       )}
+                      <button className="w-full px-4 py-3 bg-[#8B3A3A] text-white rounded-lg hover:bg-[#6B2A2A] transition font-medium">
+                        Request a Quote
+                      </button>
+                      <button className="w-full px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition font-medium">
+                        Print Specifications
+                      </button>
                     </div>
                   </div>
+                </div>
 
-                  {/* Color Selection Panel */}
-                  <div className="mt-8">
-                    <h3 className="text-lg font-semibold mb-4">Choose Colors:</h3>
+                {/* Color Selection Panel */}
+                <div className="bg-white rounded-xl shadow-sm p-6">
+                  <h3 className="font-semibold text-gray-900 mb-4">Color Configuration</h3>
 
-                    {/* Color Category Tabs */}
-                    <div className="flex gap-1 mb-4">
+                  {/* Color Category Tabs */}
+                  <div className="flex gap-2 mb-6">
+                    {[
+                      { id: "face", label: "Face Color" },
+                      { id: "accent", label: "Accent Stripe" },
+                      { id: "led", label: "LED Color" },
+                    ].map((tab) => (
                       <button
-                        onClick={() => setColorTab("face")}
-                        className={`px-6 py-2 font-medium rounded-t transition ${
-                          colorTab === "face"
-                            ? "bg-[#C4A484] text-white"
-                            : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                        key={tab.id}
+                        onClick={() => setColorTab(tab.id as ColorTab)}
+                        className={`px-4 py-2 rounded-lg font-medium text-sm transition ${
+                          colorTab === tab.id
+                            ? "bg-[#1a1a2e] text-white"
+                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                         }`}
                       >
-                        Scoreboard Face
+                        {tab.label}
                       </button>
-                      <button
-                        onClick={() => setColorTab("accent")}
-                        className={`px-6 py-2 font-medium rounded-t transition ${
-                          colorTab === "accent"
-                            ? "bg-[#C4A484] text-white"
-                            : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                        }`}
-                      >
-                        Accent Striping
-                      </button>
-                      <button
-                        onClick={() => setColorTab("led")}
-                        className={`px-6 py-2 font-medium rounded-t transition ${
-                          colorTab === "led"
-                            ? "bg-[#C4A484] text-white"
-                            : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                        }`}
-                      >
-                        LED Color
-                      </button>
-                    </div>
+                    ))}
+                  </div>
 
-                    {/* Color Swatches */}
-                    <div className="bg-gray-100 p-4 rounded-lg">
-                      <div className="flex flex-wrap gap-6">
-                        {/* Color Grid */}
-                        <div className="flex-1">
-                          {colorTab === "led" ? (
-                            // LED Colors - just Red and Amber
-                            <div className="flex gap-2">
-                              {Object.entries(LED_COLORS).map(([name, rgb]) => (
-                                <button
-                                  key={name}
-                                  onClick={() => applyColorSelection(name)}
-                                  title={name.charAt(0).toUpperCase() + name.slice(1)}
-                                  className={`w-10 h-10 rounded transition ${
-                                    ledColor === name
-                                      ? "ring-2 ring-offset-2 ring-blue-500"
-                                      : "hover:scale-110"
-                                  }`}
-                                  style={{ backgroundColor: rgb }}
-                                />
-                              ))}
-                            </div>
-                          ) : (
-                            // Face/Accent Colors - grid layout
-                            <div className="grid grid-cols-9 gap-2">
-                              {COLOR_ORDER.map((name) => (
-                                <button
-                                  key={name}
-                                  onClick={() => applyColorSelection(name)}
-                                  title={COLOR_DISPLAY_NAMES[name]}
-                                  className={`w-10 h-10 rounded transition ${
-                                    getCurrentColor() === name
-                                      ? "ring-2 ring-offset-2 ring-blue-500"
-                                      : "hover:scale-110"
-                                  } ${name === "white" ? "border border-gray-300" : ""}`}
-                                  style={{ backgroundColor: COLOR_PALETTE[name] }}
-                                />
-                              ))}
-                              {/* None option for accent striping */}
-                              {colorTab === "accent" && (
-                                <button
-                                  onClick={() => applyColorSelection("none")}
-                                  title="None"
-                                  className={`w-10 h-10 rounded transition border border-gray-300 ${
-                                    accentColor === "none"
-                                      ? "ring-2 ring-offset-2 ring-blue-500"
-                                      : "hover:scale-110"
-                                  }`}
-                                  style={{
-                                    background: "linear-gradient(135deg, white 45%, red 45%, red 55%, white 55%)"
-                                  }}
-                                />
-                              )}
-                            </div>
+                  {/* Color Swatches */}
+                  <div className="flex items-start gap-8">
+                    <div className="flex-1">
+                      {colorTab === "led" ? (
+                        <div className="flex gap-3">
+                          {Object.entries(LED_COLORS).map(([name, rgb]) => (
+                            <button
+                              key={name}
+                              onClick={() => applyColorSelection(name)}
+                              title={name.charAt(0).toUpperCase() + name.slice(1)}
+                              className={`w-12 h-12 rounded-lg transition shadow-sm ${
+                                ledColor === name
+                                  ? "ring-2 ring-offset-2 ring-[#8B3A3A] scale-110"
+                                  : "hover:scale-105"
+                              }`}
+                              style={{ backgroundColor: rgb }}
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-9 gap-2">
+                          {COLOR_ORDER.map((name) => (
+                            <button
+                              key={name}
+                              onClick={() => applyColorSelection(name)}
+                              title={COLOR_DISPLAY_NAMES[name]}
+                              className={`w-10 h-10 rounded-lg transition shadow-sm ${
+                                getCurrentColor() === name
+                                  ? "ring-2 ring-offset-2 ring-[#8B3A3A] scale-110"
+                                  : "hover:scale-105"
+                              } ${name === "white" ? "border border-gray-300" : ""}`}
+                              style={{ backgroundColor: COLOR_PALETTE[name] }}
+                            />
+                          ))}
+                          {colorTab === "accent" && (
+                            <button
+                              onClick={() => applyColorSelection("none")}
+                              title="None"
+                              className={`w-10 h-10 rounded-lg transition border-2 border-gray-300 shadow-sm flex items-center justify-center ${
+                                accentColor === "none"
+                                  ? "ring-2 ring-offset-2 ring-[#8B3A3A] scale-110"
+                                  : "hover:scale-105"
+                              }`}
+                            >
+                              <span className="text-gray-400 text-xs font-medium">None</span>
+                            </button>
                           )}
                         </div>
+                      )}
+                    </div>
 
-                        {/* Current/New Selection Display */}
-                        <div className="w-64 space-y-2">
-                          <div className="flex justify-between">
-                            <span className="font-medium">Currently Showing:</span>
-                            <span className="text-gray-700">
-                              {COLOR_DISPLAY_NAMES[getCurrentColor()] || getCurrentColor()}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="font-medium">New Selection:</span>
-                            <span className="text-gray-700">
-                              {newSelection ? (COLOR_DISPLAY_NAMES[newSelection] || newSelection) : "—"}
-                            </span>
-                          </div>
-                        </div>
+                    {/* Current Selection */}
+                    <div className="w-48 bg-gray-50 rounded-lg p-4">
+                      <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">Selected</div>
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-8 h-8 rounded-lg shadow-sm ${getCurrentColor() === "white" || getCurrentColor() === "none" ? "border border-gray-300" : ""}`}
+                          style={{
+                            backgroundColor: colorTab === "led"
+                              ? LED_COLORS[getCurrentColor()]
+                              : getCurrentColor() === "none"
+                                ? "#f5f5f5"
+                                : COLOR_PALETTE[getCurrentColor()]
+                          }}
+                        />
+                        <span className="font-medium text-gray-900">
+                          {COLOR_DISPLAY_NAMES[getCurrentColor()] || getCurrentColor()}
+                        </span>
                       </div>
                     </div>
                   </div>
+                </div>
 
-                  {/* Export Configuration */}
-                  <div className="mt-6 pt-6 border-t">
+                {/* Export Configuration */}
+                <div className="bg-white rounded-xl shadow-sm p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-semibold text-gray-900">Export Configuration</h3>
+                      <p className="text-sm text-gray-500 mt-1">Save your customization as JSON</p>
+                    </div>
                     <button
                       onClick={() => {
                         const config = {
@@ -586,43 +582,51 @@ export default function Home() {
                         navigator.clipboard.writeText(JSON.stringify(config, null, 2));
                         setMessage({ type: "success", text: "Configuration copied to clipboard!" });
                       }}
-                      className="px-6 py-2 bg-[#8B3A3A] text-white rounded hover:bg-[#6B2A2A] transition font-medium"
+                      className="px-6 py-2 bg-[#1a1a2e] text-white rounded-lg hover:bg-[#2a2a3e] transition font-medium"
                     >
-                      Export Configuration JSON
+                      Copy JSON
                     </button>
                   </div>
-
-                  {/* Detected Zones */}
-                  {selectedScoreboard.zones && selectedScoreboard.zones.length > 0 && (
-                    <div className="mt-8 pt-6 border-t">
-                      <h3 className="text-lg font-semibold mb-4">Detected Display Zones (AI Analysis)</h3>
-                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                        {selectedScoreboard.zones.map((zone) => (
-                          <div key={zone.zone_id} className="bg-gray-50 p-3 rounded border">
-                            <div className="font-medium text-sm">{zone.zone_id.replace(/_/g, " ")}</div>
-                            <div className="text-xs text-gray-500">{zone.zone_type.replace(/_/g, " ")}</div>
-                            {zone.label && (
-                              <div className="text-xs text-[#8B3A3A] mt-1">Label: {zone.label}</div>
-                            )}
-                            {zone.digit_count && (
-                              <div className="text-xs text-gray-500">{zone.digit_count} digits</div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
+
+                {/* Detected Zones */}
+                {selectedScoreboard.zones && selectedScoreboard.zones.length > 0 && (
+                  <div className="bg-white rounded-xl shadow-sm p-6">
+                    <h3 className="font-semibold text-gray-900 mb-4">Detected Display Zones (AI Analysis)</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                      {selectedScoreboard.zones.map((zone) => (
+                        <div key={zone.zone_id} className="bg-gray-50 p-3 rounded-lg">
+                          <div className="font-medium text-sm text-gray-900">{zone.zone_id.replace(/_/g, " ")}</div>
+                          <div className="text-xs text-gray-500">{zone.zone_type.replace(/_/g, " ")}</div>
+                          {zone.label && (
+                            <div className="text-xs text-[#8B3A3A] mt-1">Label: {zone.label}</div>
+                          )}
+                          {zone.digit_count && (
+                            <div className="text-xs text-gray-500">{zone.digit_count} digits</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </>
             ) : (
-              <div className="p-12 text-center text-gray-500">
-                <p className="text-lg mb-4">Select a scoreboard from the library to customize</p>
-                <button
-                  onClick={() => setActiveTab("scoreboards")}
-                  className="px-4 py-2 bg-[#8B3A3A] text-white rounded hover:bg-[#6B2A2A] transition"
-                >
-                  Browse Scoreboards
-                </button>
+              <div className="bg-white rounded-xl shadow-sm p-12 text-center">
+                <div className="max-w-md mx-auto">
+                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">No Scoreboard Selected</h3>
+                  <p className="text-gray-500 mb-6">Choose a scoreboard from the library to start customizing</p>
+                  <button
+                    onClick={() => setActiveTab("scoreboards")}
+                    className="px-6 py-2 bg-[#8B3A3A] text-white rounded-lg hover:bg-[#6B2A2A] transition font-medium"
+                  >
+                    Browse Library
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -630,47 +634,40 @@ export default function Home() {
 
         {/* Analysis Status Tab */}
         {activeTab === "analysis" && (
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-semibold mb-6">Analysis Overview</h2>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
-              <div className="text-center p-4 bg-gray-50 rounded">
-                <div className="text-4xl font-bold">{scoreboards.length}</div>
-                <div className="text-gray-600">Total</div>
+          <div className="space-y-6">
+            {/* Stats Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-white rounded-xl shadow-sm p-6 text-center">
+                <div className="text-3xl font-bold text-gray-900">{scoreboards.length}</div>
+                <div className="text-gray-500 text-sm mt-1">Total Models</div>
               </div>
-              <div className="text-center p-4 bg-yellow-50 rounded">
-                <div className="text-4xl font-bold text-yellow-600">
-                  {statusCounts.pending || 0}
-                </div>
-                <div className="text-gray-600">Pending</div>
+              <div className="bg-yellow-50 rounded-xl shadow-sm p-6 text-center border border-yellow-100">
+                <div className="text-3xl font-bold text-yellow-600">{statusCounts.pending || 0}</div>
+                <div className="text-gray-500 text-sm mt-1">Pending</div>
               </div>
-              <div className="text-center p-4 bg-green-50 rounded">
-                <div className="text-4xl font-bold text-green-600">
-                  {statusCounts.completed || 0}
-                </div>
-                <div className="text-gray-600">Completed</div>
+              <div className="bg-green-50 rounded-xl shadow-sm p-6 text-center border border-green-100">
+                <div className="text-3xl font-bold text-green-600">{statusCounts.completed || 0}</div>
+                <div className="text-gray-500 text-sm mt-1">Completed</div>
               </div>
-              <div className="text-center p-4 bg-red-50 rounded">
-                <div className="text-4xl font-bold text-red-600">
-                  {statusCounts.error || 0}
-                </div>
-                <div className="text-gray-600">Errors</div>
+              <div className="bg-red-50 rounded-xl shadow-sm p-6 text-center border border-red-100">
+                <div className="text-3xl font-bold text-red-600">{statusCounts.error || 0}</div>
+                <div className="text-gray-500 text-sm mt-1">Errors</div>
               </div>
             </div>
 
-            {/* Progress bar */}
-            <div className="mb-8">
-              <div className="flex justify-between text-sm text-gray-600 mb-2">
-                <span>Analysis Progress</span>
-                <span>
+            {/* Progress */}
+            <div className="bg-white rounded-xl shadow-sm p-6">
+              <div className="flex justify-between text-sm mb-2">
+                <span className="font-medium text-gray-700">Analysis Progress</span>
+                <span className="text-gray-500">
                   {scoreboards.length > 0
                     ? Math.round(((statusCounts.completed || 0) / scoreboards.length) * 100)
                     : 0}%
                 </span>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-4">
+              <div className="w-full bg-gray-200 rounded-full h-3">
                 <div
-                  className="bg-green-600 h-4 rounded-full transition-all"
+                  className="bg-green-500 h-3 rounded-full transition-all"
                   style={{
                     width: `${
                       scoreboards.length > 0
@@ -684,8 +681,8 @@ export default function Home() {
 
             {/* Sport Type Breakdown */}
             {statusCounts.completed && statusCounts.completed > 0 && (
-              <div>
-                <h3 className="text-lg font-semibold mb-4">Sport Type Breakdown</h3>
+              <div className="bg-white rounded-xl shadow-sm p-6">
+                <h3 className="font-semibold text-gray-900 mb-4">By Sport Type</h3>
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
                   {Array.from(
                     new Set(
@@ -694,11 +691,11 @@ export default function Home() {
                         .map((sb) => sb.sport_type)
                     )
                   ).map((sport) => (
-                    <div key={sport} className="bg-gray-50 p-3 rounded border text-center">
+                    <div key={sport} className="bg-gray-50 p-4 rounded-lg text-center">
                       <div className="text-2xl font-bold text-[#8B3A3A]">
                         {scoreboards.filter((sb) => sb.sport_type === sport).length}
                       </div>
-                      <div className="text-sm text-gray-600 capitalize">{sport}</div>
+                      <div className="text-sm text-gray-500 capitalize">{sport}</div>
                     </div>
                   ))}
                 </div>
@@ -707,11 +704,6 @@ export default function Home() {
           </div>
         )}
       </main>
-
-      {/* Footer */}
-      <footer className="mt-8 py-4 text-center text-gray-500 text-sm">
-        Electro-Mech Scoreboard Image Tool • Built with Next.js + AWS Bedrock Nova Lite
-      </footer>
     </div>
   );
 }
