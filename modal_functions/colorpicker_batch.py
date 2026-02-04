@@ -186,10 +186,13 @@ class ImageGenerator:
 
     def colorize_image(self, img: Image.Image, color_name: str, negate: bool = True) -> Image.Image:
         """
-        Colorize image using PHP algorithm.
+        Colorize image using PHP-compatible algorithm.
 
-        For Face layer: negate=False
-        For other layers (Accent, Captions, LED): negate=True
+        PHP algorithm steps:
+        1. Grayscale
+        2. Contrast (increase)
+        3. Negate (optional)
+        4. Colorize (additive - adds color to dark areas)
 
         The masks have:
         - Alpha channel defining where the layer appears
@@ -207,24 +210,26 @@ class ImageGenerator:
         # Convert to grayscale
         gray = ImageOps.grayscale(img)
 
-        # Increase contrast (PHP uses negative value for more contrast)
+        # Increase contrast (PHP uses negative value = more contrast)
         enhancer = ImageEnhance.Contrast(gray)
         contrasted = enhancer.enhance(2.0)
 
-        # Negate if needed (all layers except Face)
+        # Negate if needed
         if negate:
             contrasted = ImageOps.invert(contrasted)
 
-        # Colorize: multiply grayscale intensity by target color
-        gray_arr = np.array(contrasted, dtype=np.float32) / 255.0
+        # PHP-style additive colorize: adds color values to each pixel
+        # Dark areas (0) become the target color
+        # Light areas (255) stay white (clamped at 255)
+        gray_arr = np.array(contrasted, dtype=np.int32)
         r, g, b = rgb
 
-        # Create colored image
+        # Create colored image using additive colorization
         h, w = gray_arr.shape
         colored = np.zeros((h, w, 3), dtype=np.uint8)
-        colored[:, :, 0] = (gray_arr * r).clip(0, 255).astype(np.uint8)
-        colored[:, :, 1] = (gray_arr * g).clip(0, 255).astype(np.uint8)
-        colored[:, :, 2] = (gray_arr * b).clip(0, 255).astype(np.uint8)
+        colored[:, :, 0] = np.clip(gray_arr + r, 0, 255).astype(np.uint8)
+        colored[:, :, 1] = np.clip(gray_arr + g, 0, 255).astype(np.uint8)
+        colored[:, :, 2] = np.clip(gray_arr + b, 0, 255).astype(np.uint8)
 
         result = Image.fromarray(colored, 'RGB').convert('RGBA')
         result.putalpha(alpha)
@@ -254,10 +259,10 @@ class ImageGenerator:
         if frame:
             layers.append(('Frame', frame.convert('RGBA')))
 
-        # 2. Face (colorize with primary, negate=False)
+        # 2. Face (colorize with primary, negate=True - white mask needs inversion)
         face = self.get_mask(model_normalized, "Face")
         if face:
-            layers.append(('Face', self.colorize_image(face, primary, negate=False)))
+            layers.append(('Face', self.colorize_image(face, primary, negate=True)))
 
         # 3. Accent-Striping (colorize with accent, negate=True)
         accent_layer = self.get_mask(model_normalized, "Accent-Striping")
@@ -560,6 +565,7 @@ def generate_single_image(item: dict) -> dict:
         return None
 
     def colorize(img: Image.Image, color_name: str, negate: bool = True) -> Image.Image:
+        """PHP-compatible additive colorization"""
         rgb = COLORS.get(color_name, (255, 255, 255))
         if img.mode != 'RGBA':
             img = img.convert('RGBA')
@@ -572,13 +578,14 @@ def generate_single_image(item: dict) -> dict:
         if negate:
             contrasted = ImageOps.invert(contrasted)
 
-        gray_arr = np.array(contrasted, dtype=np.float32) / 255.0
+        # PHP-style additive colorize
+        gray_arr = np.array(contrasted, dtype=np.int32)
         r, g, b = rgb
         h, w = gray_arr.shape
         colored = np.zeros((h, w, 3), dtype=np.uint8)
-        colored[:, :, 0] = (gray_arr * r).clip(0, 255).astype(np.uint8)
-        colored[:, :, 1] = (gray_arr * g).clip(0, 255).astype(np.uint8)
-        colored[:, :, 2] = (gray_arr * b).clip(0, 255).astype(np.uint8)
+        colored[:, :, 0] = np.clip(gray_arr + r, 0, 255).astype(np.uint8)
+        colored[:, :, 1] = np.clip(gray_arr + g, 0, 255).astype(np.uint8)
+        colored[:, :, 2] = np.clip(gray_arr + b, 0, 255).astype(np.uint8)
 
         result = Image.fromarray(colored, 'RGB').convert('RGBA')
         result.putalpha(alpha)
@@ -596,7 +603,7 @@ def generate_single_image(item: dict) -> dict:
     update_progress("Colorizing face...", 4, 45)
     face = get_mask(model_normalized, "Face")
     if face:
-        layers.append(colorize(face, primary, negate=False))  # Face: no negate
+        layers.append(colorize(face, primary, negate=True))  # Face: white mask needs inversion
 
     # Accent striping
     accent_layer = get_mask(model_normalized, "Accent-Striping")
