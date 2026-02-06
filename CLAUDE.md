@@ -53,12 +53,13 @@ supabase/
 └── migrations/                  # Database schema
 ```
 
-## S3 Image Storage
+## Image Storage
 
-Images are stored in AWS S3 for reliable hosting:
-- **Bucket**: `em-admin-assets`
+Images are stored in AWS S3 and served via a custom subdomain:
+- **Bucket**: `em-admin-assets` (AWS S3)
 - **Path**: `/images/` (429 PNG files)
-- **URL**: `https://em-admin-assets.s3.us-east-1.amazonaws.com/images/{filename}.png`
+- **URL**: `https://img.electro-mech.com/images/{filename}.png`
+- **CDN**: Cloudflare Worker (`s3-img-proxy`) proxies requests to S3
 - **Source**: Downloaded from electro-mech.com ZIP archive
 
 ## Data Sources

@@ -6,7 +6,7 @@ import { ScoreboardModel, COLOR_PALETTE, LED_COLORS } from "@/lib/supabase";
 import ColorizedScoreboard from "@/components/ColorizedScoreboard";
 
 // S3 URL for generated images
-const S3_BASE_URL = "https://em-admin-assets.s3.us-east-1.amazonaws.com";
+const S3_BASE_URL = "https://img.electro-mech.com";
 
 type Tab = "scoreboards" | "customizer" | "analysis";
 type ColorTab = "face" | "accent" | "led";

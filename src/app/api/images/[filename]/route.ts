@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const S3_BASE_URL = "https://em-admin-assets.s3.us-east-1.amazonaws.com/images";
+const S3_BASE_URL = "https://img.electro-mech.com/images";
 
 export async function GET(
   request: NextRequest,

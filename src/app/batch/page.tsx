@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 
-const S3_BASE_URL = "https://em-admin-assets.s3.us-east-1.amazonaws.com";
+const S3_BASE_URL = "https://img.electro-mech.com";
 
 interface BatchStats {
   total: number;

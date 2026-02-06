@@ -310,15 +310,40 @@ class ImageGenerator:
         if not layers:
             return None
 
-        # Composite all layers
-        result = Image.new('RGBA', layers[0][1].size, (0, 0, 0, 0))
+        # Get original image dimensions FIRST
+        original_width, original_height = self.get_original_dimensions(model)
+
+        # Find the union of all content bounding boxes
+        # This gives us the area containing ALL mask content
+        union_bbox = None
+        for name, layer in layers:
+            if layer.mode == 'RGBA':
+                bbox = layer.getbbox()
+                if bbox:
+                    if union_bbox is None:
+                        union_bbox = bbox
+                    else:
+                        # Expand union to include this bbox
+                        union_bbox = (
+                            min(union_bbox[0], bbox[0]),
+                            min(union_bbox[1], bbox[1]),
+                            max(union_bbox[2], bbox[2]),
+                            max(union_bbox[3], bbox[3]),
+                        )
+
+        # Composite all layers at their native size
+        mask_width, mask_height = layers[0][1].size
+        result = Image.new('RGBA', (mask_width, mask_height), (0, 0, 0, 0))
         for name, layer in layers:
             if layer.size != result.size:
                 layer = layer.resize(result.size, Image.LANCZOS)
             result = Image.alpha_composite(result, layer)
 
-        # Resize to match original image dimensions exactly
-        original_width, original_height = self.get_original_dimensions(model)
+        # Crop to content bounds if found
+        if union_bbox:
+            result = result.crop(union_bbox)
+
+        # Now resize to exact original dimensions
         if result.size != (original_width, original_height):
             result = result.resize((original_width, original_height), Image.LANCZOS)
 
@@ -856,6 +881,77 @@ def populate_tasks(models: list[str] = None, reset_failed: bool = True):
             print(f"Error upserting model {model}: {e}")
 
     return len(new_tasks)
+
+
+@app.function(
+    image=image,
+    secrets=[modal.Secret.from_name("supabase-credentials"), modal.Secret.from_name("aws-credentials")],
+    timeout=300,
+)
+@modal.fastapi_endpoint(method="POST", docs=True)
+def generate_test_images(item: dict = {}) -> dict:
+    """
+    Generate 1 test image per model for testing purposes.
+    POST body (optional): {"max_models": 10, "primary": "navy_blue", "accent": "white", "led": "red"}
+    """
+    max_models = item.get('max_models', 10)
+    primary = item.get('primary', 'navy_blue')
+    accent = item.get('accent', 'white')
+    led = item.get('led', 'red')
+
+    # Get all models
+    supabase = create_client(
+        os.environ['SUPABASE_URL'],
+        os.environ['SUPABASE_SERVICE_KEY']
+    )
+
+    result = supabase.table('colorpicker_tasks').select('model').execute()
+    models = list(set(t['model'] for t in result.data)) if result.data else []
+    models = models[:max_models]
+
+    # Generate one image per model using the ImageGenerator class
+    s3 = boto3.client('s3')
+    results = []
+
+    # Call the process_single method via Modal's map
+    tasks = [
+        {
+            'id': f'test-{model}',
+            'model': model,
+            'primary_color': primary,
+            'accent_color': accent,
+            'led_color': led,
+            'width': 720,
+        }
+        for model in models
+    ]
+
+    generator = ImageGenerator()
+    gen_results = list(generator.process_single.map(tasks, order_outputs=False))
+
+    for task, gen_result in zip(tasks, gen_results):
+        model = task['model']
+        if gen_result.get('success'):
+            # Get the S3 key from the result
+            s3_key = f"colorpicker-generated/{model}/{primary}-{accent}-{led}.png"
+            results.append({
+                "model": model,
+                "success": True,
+                "url": f"https://img.electro-mech.com/{s3_key}"
+            })
+        else:
+            results.append({
+                "model": model,
+                "success": False,
+                "error": gen_result.get('error', 'Unknown error')
+            })
+
+    return {
+        "success": True,
+        "total": len(models),
+        "generated": sum(1 for r in results if r.get('success')),
+        "results": results,
+    }
 
 
 @app.function(

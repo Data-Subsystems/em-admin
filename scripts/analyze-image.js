@@ -4,7 +4,7 @@
 const https = require('https');
 const { createCanvas, loadImage } = require('canvas');
 
-const IMAGE_URL = 'https://em-admin-assets.s3.us-east-1.amazonaws.com/images/lx1020-tcart.png';
+const IMAGE_URL = 'https://img.electro-mech.com/images/lx1020-tcart.png';
 
 async function analyzeImage() {
   console.log('Fetching image from:', IMAGE_URL);

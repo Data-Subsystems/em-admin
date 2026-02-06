@@ -127,7 +127,7 @@ npm run lint
 
 - **Images**: 429 PNG files from Electro-Mech, stored in S3
 - **Colors**: JSON configuration defining available color options
-- **URL**: `https://em-admin-assets.s3.us-east-1.amazonaws.com/images/`
+- **URL**: `https://img.electro-mech.com/images/`
 
 ## Browser Support
 
